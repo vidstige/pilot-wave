@@ -1,6 +1,7 @@
-//! Oblique view: the grid as a lit liquid surface, droplets as spheres.
+//! Oblique view: the grid as a lit liquid surface, droplets as beads.
 mod droplet;
 
+use std::sync::Mutex;
 use std::thread;
 
 use crate::bath::Vec2;
@@ -32,78 +33,65 @@ const REACH: f64 = 4.0;
 const EXPOSURE: f64 = 1.5;
 const GOLDEN: f64 = 0.618_033_988_749_895;
 
-fn add(a: Vec3, b: Vec3) -> Vec3 {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-fn sub(a: Vec3, b: Vec3) -> Vec3 {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn scale(a: Vec3, s: f64) -> Vec3 {
-    [a[0] * s, a[1] * s, a[2] * s]
-}
-
-fn mul(a: Vec3, b: Vec3) -> Vec3 {
-    [a[0] * b[0], a[1] * b[1], a[2] * b[2]]
-}
-
-fn dot(a: Vec3, b: Vec3) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn normalize(a: Vec3) -> Vec3 {
-    scale(a, 1.0 / dot(a, a).sqrt())
-}
+fn add(a: Vec3, b: Vec3) -> Vec3 { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
+fn scale(a: Vec3, s: f64) -> Vec3 { a.map(|x| x * s) }
+fn sub(a: Vec3, b: Vec3) -> Vec3 { add(a, scale(b, -1.0)) }
+fn dot(a: Vec3, b: Vec3) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
+fn normalize(a: Vec3) -> Vec3 { scale(a, 1.0 / dot(a, a).sqrt()) }
 
 fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
-struct Scene<'a> {
-    grid: &'a Grid,
-    /// Scale from grid values to world heights.
-    k: f64,
+struct Scene {
+    /// World heights of the bath, dimples included.
+    surface: Grid,
     droplets: Vec<Droplet>,
 }
 
-fn bilinear(grid: &Grid, p: Vec2) -> f64 {
-    let m = (grid.n - 2) as f64;
-    let (x, y) = grid.cell(p);
+/// Height of the surface at p, interpolated bilinearly.
+fn elevation(surface: &Grid, p: Vec2) -> f64 {
+    let m = (surface.n - 2) as f64;
+    let (x, y) = surface.cell(p);
     let (x, y) = (x.clamp(0.0, m), y.clamp(0.0, m));
     let (i, j) = (x as usize, y as usize);
     let (fx, fy) = (x - i as f64, y - j as f64);
-    let row = |j| grid.at(i, j) + (grid.at(i + 1, j) - grid.at(i, j)) * fx;
+    let at = |i, j| surface.at(i, j);
+    let row = |j| at(i, j) + (at(i + 1, j) - at(i, j)) * fx;
     row(j) + (row(j + 1) - row(j)) * fy
 }
 
-/// Surface height at p: scaled waves fading out towards the edge,
-/// dipping under each droplet.
-fn elevation(scene: &Scene, p: Vec2) -> f64 {
-    let grid = scene.grid;
-    let d = [p[0] - grid.center[0], p[1] - grid.center[1]];
-    let r = (d[0] * d[0] + d[1] * d[1]).sqrt() / grid.half;
-    let fade = 1.0 - smoothstep(FADE.0, FADE.1, r);
-    let dips: f64 = scene.droplets.iter().map(|x| droplet::dimple(x, p)).sum();
-    scene.k * bilinear(grid, p) * fade - dips
-}
-
-fn normal(scene: &Scene, p: Vec2) -> Vec3 {
-    let e = scene.grid.half / scene.grid.n as f64;
-    let h = |dx, dy| elevation(scene, [p[0] + dx, p[1] + dy]);
+fn normal(surface: &Grid, p: Vec2) -> Vec3 {
+    let e = surface.half / surface.n as f64;
+    let h = |dx, dy| elevation(surface, [p[0] + dx, p[1] + dy]);
     normalize([h(-e, 0.0) - h(e, 0.0), h(0.0, -e) - h(0.0, e), 2.0 * e])
 }
 
-/// Distance along the ray to the surface, marching one cell at a time.
-fn march(scene: &Scene, o: Vec3, d: Vec3) -> f64 {
-    let grid = scene.grid;
-    let top = RELIEF * grid.half;
-    let dt = 2.0 * grid.half / grid.n as f64 / d[0].hypot(d[1]);
-    let gap = |t: f64| {
-        o[2] + t * d[2] - elevation(scene, [o[0] + t * d[0], o[1] + t * d[1]])
+/// World heights of the bath: the waves scaled to the relief, fading
+/// out towards the edge and dipping under each droplet.
+fn relief(grid: &Grid, droplets: &[Vec2]) -> Grid {
+    let k = RELIEF * grid.half / grid.peak().max(f64::MIN_POSITIVE);
+    let height = |i: usize, v: f64| {
+        let p = grid.world(i % grid.n, i / grid.n);
+        let d = [p[0] - grid.center[0], p[1] - grid.center[1]];
+        let r = d[0].hypot(d[1]) / grid.half;
+        let fade = 1.0 - smoothstep(FADE.0, FADE.1, r);
+        let dips: f64 = droplets.iter().map(|&x| droplet::dimple(x, p)).sum();
+        k * v * fade - dips
     };
-    let mut t = (top - o[2]) / d[2];
+    let values = grid.values.iter().enumerate();
+    let values = values.map(|(i, &v)| height(i, v)).collect();
+    Grid { values, ..Grid::zeros(grid.center, grid.half, grid.n) }
+}
+
+/// Distance along the ray to the surface, marching one cell at a time.
+fn march(surface: &Grid, o: Vec3, d: Vec3) -> f64 {
+    let dt = 2.0 * surface.half / surface.n as f64 / d[0].hypot(d[1]);
+    let gap = |t: f64| {
+        o[2] + t * d[2] - elevation(surface, [o[0] + t * d[0], o[1] + t * d[1]])
+    };
+    let mut t = (RELIEF * surface.half - o[2]) / d[2];
     let mut g = gap(t);
     loop {
         let next = gap(t + dt);
@@ -131,31 +119,48 @@ fn sky(r: Vec3) -> Vec3 {
 }
 
 /// The bath at p with normal n seen from v: Lambert and Blinn-Phong
-/// from the key light, the sky and droplets mirrored by Fresnel.
+/// from the key light, the sky and droplets mirrored by Fresnel. Only
+/// droplets right above mirror, as the exaggerated waves would also
+/// mirror them in troughs far away. Darkening the sky gives the soft
+/// contact shadow.
 fn surface(scene: &Scene, p: Vec3, n: Vec3, v: Vec3) -> Vec3 {
     let l = normalize(KEY);
-    let h = normalize(add(l, v));
-    let sun = droplet::sunlight(&scene.droplets, p);
     let open = 1.0 - droplet::occlusion(&scene.droplets, p, n);
-    let lambert = dot(n, l).max(0.0);
-    let diffuse = sun * lambert + open * FILL * (0.5 + 0.5 * n[2]);
-    let specular = sun * dot(n, h).max(0.0).powf(SHININESS);
+    let diffuse = dot(n, l).max(0.0) + open * FILL * (0.5 + 0.5 * n[2]);
+    let specular = dot(n, normalize(add(l, v))).max(0.0).powf(SHININESS);
     let f = fresnel(dot(n, v));
     let r = reflect(n, v);
-    // Only the double right under a droplet: the exaggerated waves
-    // would also mirror it in troughs far away.
-    let double = droplet::trace(&scene.droplets, p, r)
-        .filter(|&(t, _)| t < REACH * droplet::RADIUS);
-    // Darkening the mirrored sky too gives the soft contact shadow.
-    let mirror = match double {
-        Some((_, c)) => c,
-        None => add(scale(sky(r), open), scale(KEY_COLOR, specular)),
+    let mirror = match droplet::trace(&scene.droplets, p, r) {
+        Some((t, c)) if t < REACH * droplet::RADIUS => c,
+        _ => add(scale(sky(r), open), scale(KEY_COLOR, specular)),
     };
     add(scale(LIQUID, diffuse * (1.0 - f)), scale(mirror, f))
 }
 
-fn linear(c: Color) -> Vec3 {
-    c.map(|x| (x as f64 / 255.0).powf(2.2))
+fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
+    let t = march(&scene.surface, o, d);
+    match droplet::trace(&scene.droplets, o, d) {
+        Some((s, c)) if s < t => c,
+        _ => {
+            let p = add(o, scale(d, t));
+            let n = normal(&scene.surface, [p[0], p[1]]);
+            surface(scene, p, n, scale(d, -1.0))
+        }
+    }
+}
+
+/// Droplets at the given positions resting in dimples of the bath.
+fn scene(grid: &Grid, positions: &[Vec2]) -> Scene {
+    let surface = relief(grid, positions);
+    let rest = droplet::RADIUS * (1.0 - droplet::SINK);
+    let linear = |c: Color| c.map(|x| (x as f64 / 255.0).powf(2.2));
+    let droplets = positions.iter().zip(DROPLET_COLORS.iter().cycle())
+        .map(|(&p, &color)| Droplet {
+            center: [p[0], p[1], elevation(&surface, p) + rest],
+            tint: linear(color),
+        })
+        .collect();
+    Scene { surface, droplets }
 }
 
 /// Tone map and gamma encode.
@@ -168,38 +173,6 @@ fn srgb(c: Vec3) -> Color {
 fn subpixel(k: usize, n: usize) -> (f64, f64) {
     let k = k as f64;
     ((k + 0.5) / n as f64, (0.5 + k * GOLDEN).fract())
-}
-
-fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
-    let t = march(scene, o, d);
-    match droplet::trace(&scene.droplets, o, d) {
-        Some((s, c)) if s < t => c,
-        _ => {
-            let p = add(o, scale(d, t));
-            let n = normal(scene, [p[0], p[1]]);
-            surface(scene, p, n, scale(d, -1.0))
-        }
-    }
-}
-
-/// Droplets at the given positions resting in dimples of the surface.
-fn scene<'a>(grid: &'a Grid, positions: &[Vec2]) -> Scene<'a> {
-    let k = RELIEF * grid.half / grid.peak().max(f64::MIN_POSITIVE);
-    let droplets = positions.iter().zip(DROPLET_COLORS.iter().cycle())
-        .map(|(&p, &color)| Droplet {
-            center: [p[0], p[1], 0.0],
-            tint: linear(color),
-        })
-        .collect();
-    let mut scene = Scene { grid, k, droplets };
-    let rest = droplet::RADIUS * (1.0 - droplet::SINK);
-    let heights: Vec<f64> = positions.iter()
-        .map(|&p| elevation(&scene, p) + rest)
-        .collect();
-    for (x, z) in scene.droplets.iter_mut().zip(heights) {
-        x.center[2] = z;
-    }
-    scene
 }
 
 /// Oblique view of the grid with droplets at the given positions,
@@ -222,23 +195,24 @@ pub fn render(
         let sy = (0.5 * height as f64 - y) * s;
         normalize(add(forward, add([sx, 0.0, 0.0], scale(up, sy))))
     };
-    let pixel = |i: usize| {
-        let (x, y) = ((i % width) as f64, (i / width) as f64);
+    let pixel = |x: f64, y: f64| {
         let c = (0..samples)
-            .map(|i| subpixel(i, samples))
+            .map(|k| subpixel(k, samples))
             .map(|(dx, dy)| trace(&scene, eye, ray(x + dx, y + dy)))
             .fold([0.0; 3], add);
         srgb(scale(c, 1.0 / samples as f64))
     };
     let mut pixels = vec![[0; 3]; width * height];
+    // Rows on demand, as the cores differ in speed and rows in cost.
+    let rows = Mutex::new(pixels.chunks_mut(width).enumerate());
     let threads = thread::available_parallelism().map_or(1, |n| n.get());
-    let band = height.div_ceil(threads) * width;
     thread::scope(|s| {
-        for (b, chunk) in pixels.chunks_mut(band).enumerate() {
-            let pixel = &pixel;
-            s.spawn(move || {
-                for (i, c) in chunk.iter_mut().enumerate() {
-                    *c = pixel(b * band + i);
+        for _ in 0..threads {
+            s.spawn(|| loop {
+                // A while let would hold the lock through the row.
+                let Some((y, row)) = rows.lock().unwrap().next() else { break };
+                for (x, c) in row.iter_mut().enumerate() {
+                    *c = pixel(x as f64, y as f64);
                 }
             });
         }
@@ -268,8 +242,8 @@ mod tests {
         let scene = scene(&grid, &[]);
         let up = [0.0, 0.0, 1.0];
         let lit = |x| {
-            let p = [x, 0.0, elevation(&scene, [x, 0.0])];
-            surface(&scene, p, normal(&scene, [x, 0.0]), up)
+            let p = [x, 0.0, elevation(&scene.surface, [x, 0.0])];
+            surface(&scene, p, normal(&scene.surface, [x, 0.0]), up)
         };
         assert!(lit(-0.2).iter().sum::<f64>() > lit(0.2).iter().sum());
     }
@@ -286,9 +260,9 @@ mod tests {
     fn droplet_sinks_slightly_into_a_dimple_of_a_calm_bath() {
         let grid = Grid::zeros([0.0; 2], 1.0, 40);
         let scene = scene(&grid, &[[0.0; 2]]);
-        let under = elevation(&scene, [0.0; 2]);
+        let under = elevation(&scene.surface, [0.0; 2]);
         let bottom = scene.droplets[0].center[2] - droplet::RADIUS;
-        assert!(under < elevation(&scene, [0.5, 0.0]));
+        assert!(under < elevation(&scene.surface, [0.5, 0.0]));
         assert!(bottom < under && under - bottom < 0.1 * droplet::RADIUS);
     }
 
