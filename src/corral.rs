@@ -10,7 +10,7 @@
 use std::f64::consts::PI;
 
 use crate::bath::{Bath, Vec2};
-use crate::field::WAVENUMBER;
+use crate::wake::WAVENUMBER;
 use crate::modes::{modes, Mode};
 
 /// Width of the Faraday resonance in wavenumber.

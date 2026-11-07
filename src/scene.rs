@@ -1,7 +1,7 @@
 //! Named starting setups and their bounce by bounce run. No I/O.
 use crate::bath::{Bath, Vec2};
 use crate::corral::Corral;
-use crate::field::Field;
+use crate::open::Open;
 use crate::rng::Rng;
 use crate::walker::{confine, spring, step, Walkers};
 
@@ -23,7 +23,7 @@ pub struct Scene {
 
 pub fn scene(name: &str, memory: f64) -> Scene {
     let free = |walkers: Walkers, half: f64| Scene {
-        bath: Box::new(Field::new(memory, walkers.positions.len())),
+        bath: Box::new(Open::new(memory, walkers.positions.len())),
         walkers,
         half,
         follow: true,

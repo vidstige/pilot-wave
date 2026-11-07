@@ -76,7 +76,7 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field::Field;
+    use crate::open::Open;
 
     #[test]
     fn cell_inverts_world() {
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn sampled_cells_hold_the_bath_height_at_their_centers() {
-        let mut bath = Field::new(5.0, 1);
+        let mut bath = Open::new(5.0, 1);
         bath.remember(&[[0.2, -0.1]]);
         let g = Grid::sample(&bath, [0.3, 0.1], 1.5, 37);
         for (j, i) in [(0, 0), (5, 36), (36, 20), (18, 18)] {

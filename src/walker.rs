@@ -62,11 +62,11 @@ pub fn spring(stiffness: f64) -> impl Fn(Vec2) -> Vec2 {
 mod tests {
     use super::*;
     use crate::bath::distance;
-    use crate::field::Field;
+    use crate::open::Open;
     use std::f64::consts::TAU;
 
     fn run(memory: f64, w: &mut Walkers, bounces: usize) -> Vec<Vec<Vec2>> {
-        let mut f = Field::new(memory, w.positions.len());
+        let mut f = Open::new(memory, w.positions.len());
         let mut rng = Rng::new(1);
         (0..bounces)
             .map(|_| {
