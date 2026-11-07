@@ -125,8 +125,9 @@ mod tests {
         let c = stirred();
         let scale = c.height([0.0; 2]).abs().max(1.0);
         for p in [[0.3, -0.2], [1.1, 0.4], [-0.7, 0.9]] {
-            let dx = (exact_height(&c, [p[0] + H, p[1]]) - exact_height(&c, [p[0] - H, p[1]])) / (2.0 * H);
-            let dy = (exact_height(&c, [p[0], p[1] + H]) - exact_height(&c, [p[0], p[1] - H])) / (2.0 * H);
+            let exact = |x, y| exact_height(&c, [x, y]);
+            let dx = (exact(p[0] + H, p[1]) - exact(p[0] - H, p[1])) / (2.0 * H);
+            let dy = (exact(p[0], p[1] + H) - exact(p[0], p[1] - H)) / (2.0 * H);
             let g = c.slope(p);
             assert!((g[0] - dx).abs() < 1e-3 * scale && (g[1] - dy).abs() < 1e-3 * scale);
         }
