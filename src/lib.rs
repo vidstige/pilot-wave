@@ -4,6 +4,7 @@ pub mod bessel;
 pub mod colormap;
 pub mod corral;
 pub mod field;
+pub mod frame;
 pub mod grid;
 pub mod image;
 pub mod modes;

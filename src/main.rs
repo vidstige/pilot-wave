@@ -2,23 +2,16 @@ use std::env;
 
 use pilot_wave::grid::Grid;
 use pilot_wave::scene::{scene, Simulation};
-use pilot_wave::{colormap, oblique, png, topdown};
+use pilot_wave::{colormap, frame, png, topdown};
 
 const PIXELS: usize = 600;
 const HISTOGRAM_BINS: usize = 100;
 const HISTOGRAM_SKIP: usize = 5000;
 
-fn frame(sim: &Simulation, view: &str, path: &str) {
-    let s = &sim.scene;
-    let grid = Grid::sample(&*s.bath, sim.center(), s.half, PIXELS);
+fn write_frame(sim: &Simulation, view: &str, path: &str) {
     let image = match view {
-        "top" => {
-            let peak = grid.peak();
-            let mut image = topdown::paint(&grid, &colormap::COOLWARM, -peak, peak, 1);
-            topdown::droplets(&mut image, &grid, &sim.trails);
-            image
-        }
-        "oblique" => oblique::render(&grid, &s.walkers.positions, PIXELS, PIXELS),
+        "top" => frame::top(sim, PIXELS),
+        "oblique" => frame::oblique(sim, PIXELS, PIXELS),
         other => panic!("unknown view {other}"),
     };
     png::write(path, &image).expect("write frame");
@@ -42,7 +35,7 @@ fn main() {
             histogram.count(sim.scene.walkers.positions[0]);
         }
         if bounce % every == 0 {
-            frame(&sim, view, &format!("{out}/{name}_{:05}.png", bounce / every));
+            write_frame(&sim, view, &format!("{out}/{name}_{:05}.png", bounce / every));
         }
     }
     let scale = PIXELS / HISTOGRAM_BINS;
