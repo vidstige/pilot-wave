@@ -109,21 +109,30 @@ fn march(scene: &Scene, o: Vec3, d: Vec3) -> f64 {
     }
 }
 
+/// View direction v mirrored in a surface with normal n.
+fn reflect(n: Vec3, v: Vec3) -> Vec3 {
+    sub(scale(n, 2.0 * dot(n, v)), v)
+}
+
+/// Schlick's reflectance at cos of the incidence angle.
+fn fresnel(cos: f64) -> f64 {
+    0.04 + 0.96 * (1.0 - cos.max(0.0)).powi(5)
+}
+
 fn sky(r: Vec3) -> Vec3 {
     let t = r[2].max(0.0).sqrt();
     add(scale(HORIZON, 1.0 - t), scale(ZENITH, t))
 }
 
 /// Lambert and Blinn-Phong from the key light, sky reflection by Fresnel.
-fn shade(n: Vec3, v: Vec3, base: Vec3) -> Vec3 {
+fn surface(n: Vec3, v: Vec3) -> Vec3 {
     let l = normalize(KEY);
     let h = normalize(add(l, v));
     let diffuse = dot(n, l).max(0.0) + FILL * (0.5 + 0.5 * n[2]);
     let specular = dot(n, h).max(0.0).powf(SHININESS);
-    let fresnel = 0.04 + 0.96 * (1.0 - dot(n, v).max(0.0)).powi(5);
-    let r = sub(scale(n, 2.0 * dot(n, v)), v);
-    let mirror = add(sky(r), scale(KEY_COLOR, specular));
-    add(scale(base, diffuse * (1.0 - fresnel)), scale(mirror, fresnel))
+    let f = fresnel(dot(n, v));
+    let mirror = add(sky(reflect(n, v)), scale(KEY_COLOR, specular));
+    add(scale(LIQUID, diffuse * (1.0 - f)), scale(mirror, f))
 }
 
 fn linear(c: Color) -> Vec3 {
@@ -149,11 +158,11 @@ fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
         Some((s, x)) if s < t => {
             let p = add(o, scale(d, s));
             let n = scale(sub(p, x.center), 1.0 / droplet::RADIUS);
-            shade(n, v, x.tint)
+            droplet::shade(x, n, v)
         }
         _ => {
             let p = [o[0] + t * d[0], o[1] + t * d[1]];
-            shade(normal(scene, p), v, LIQUID)
+            surface(normal(scene, p), v)
         }
     }
 }
@@ -243,7 +252,7 @@ mod tests {
         let grid = bump(1.0);
         let scene = scene(&grid, &[]);
         let up = [0.0, 0.0, 1.0];
-        let lit = |x| shade(normal(&scene, [x, 0.0]), up, LIQUID);
+        let lit = |x| surface(normal(&scene, [x, 0.0]), up);
         assert!(lit(-0.2).iter().sum::<f64>() > lit(0.2).iter().sum());
     }
 
