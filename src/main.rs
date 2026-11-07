@@ -75,7 +75,7 @@ fn frame(scene: &Scene, trails: &[Vec<Vec2>], view: &str, path: &str) {
             topdown::droplets(&mut image, &grid, trails);
             image
         }
-        "oblique" => oblique::render(&grid, &scene.walkers.positions, PIXELS, PIXELS),
+        "oblique" => oblique::render(&grid, &scene.walkers.positions, PIXELS, PIXELS, 4),
         other => panic!("unknown view {other}"),
     };
     png::write(path, &image).expect("write frame");

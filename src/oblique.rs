@@ -25,9 +25,7 @@ const ZENITH: Vec3 = [0.02, 0.03, 0.07];
 const HORIZON: Vec3 = [1.3, 1.05, 0.8];
 const SHININESS: f64 = 60.0;
 const EXPOSURE: f64 = 1.5;
-/// Rotated grid supersampling.
-const SUBPIXELS: [(f64, f64); 4] =
-    [(0.375, 0.125), (0.875, 0.375), (0.125, 0.625), (0.625, 0.875)];
+const GOLDEN: f64 = 0.618_033_988_749_895;
 
 fn add(a: Vec3, b: Vec3) -> Vec3 {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
@@ -131,6 +129,12 @@ fn srgb(c: Vec3) -> Color {
     c.map(|x| (tone(x).powf(1.0 / 2.2) * 255.0).round() as u8)
 }
 
+/// Sample k of n within a pixel: stratified in x, golden ratio in y.
+fn subpixel(k: usize, n: usize) -> (f64, f64) {
+    let k = k as f64;
+    ((k + 0.5) / n as f64, (0.5 + k * GOLDEN).fract())
+}
+
 fn trace(grid: &Grid, k: f64, droplets: &[Vec3], o: Vec3, d: Vec3) -> Vec3 {
     let v = scale(d, -1.0);
     let r = DROPLET_RADIUS;
@@ -151,8 +155,15 @@ fn trace(grid: &Grid, k: f64, droplets: &[Vec3], o: Vec3, d: Vec3) -> Vec3 {
     }
 }
 
-/// Oblique view of the grid with droplets at the given positions.
-pub fn render(grid: &Grid, droplets: &[Vec2], width: usize, height: usize) -> Image {
+/// Oblique view of the grid with droplets at the given positions,
+/// averaging samples rays per pixel.
+pub fn render(
+    grid: &Grid,
+    droplets: &[Vec2],
+    width: usize,
+    height: usize,
+    samples: usize,
+) -> Image {
     let k = RELIEF * grid.half / grid.peak().max(f64::MIN_POSITIVE);
     let spheres: Vec<Vec3> = droplets.iter()
         .map(|&p| [p[0], p[1], elevation(grid, k, p) + DROPLET_RADIUS])
@@ -169,10 +180,11 @@ pub fn render(grid: &Grid, droplets: &[Vec2], width: usize, height: usize) -> Im
     };
     let pixel = |i: usize| {
         let (x, y) = ((i % width) as f64, (i / width) as f64);
-        let c = SUBPIXELS.iter()
+        let c = (0..samples)
+            .map(|i| subpixel(i, samples))
             .map(|(dx, dy)| trace(grid, k, &spheres, eye, ray(x + dx, y + dy)))
             .fold([0.0; 3], add);
-        srgb(scale(c, 1.0 / SUBPIXELS.len() as f64))
+        srgb(scale(c, 1.0 / samples as f64))
     };
     let pixels = (0..width * height).map(pixel).collect();
     Image { width, height, pixels }
@@ -206,16 +218,16 @@ mod tests {
     #[test]
     fn image_is_independent_of_wave_amplitude() {
         // A power of two scales the heights exactly.
-        let a = render(&bump(1.0), &[], 32, 32);
-        let b = render(&bump(4.0), &[], 32, 32);
+        let a = render(&bump(1.0), &[], 32, 32, 4);
+        let b = render(&bump(4.0), &[], 32, 32, 4);
         assert_eq!(a.pixels, b.pixels);
     }
 
     #[test]
     fn droplet_appears_where_it_sits() {
         let grid = Grid::zeros([0.0; 2], 1.0, 40);
-        let calm = render(&grid, &[], 32, 32);
-        let drop = render(&grid, &[[0.0; 2]], 32, 32);
+        let calm = render(&grid, &[], 32, 32, 4);
+        let drop = render(&grid, &[[0.0; 2]], 32, 32, 4);
         let at = |x: usize, y: usize| y * 32 + x;
         assert_ne!(calm.pixels[at(16, 16)], drop.pixels[at(16, 16)]);
         assert_eq!(calm.pixels[at(0, 0)], drop.pixels[at(0, 0)]);
