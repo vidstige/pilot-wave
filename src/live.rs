@@ -3,7 +3,6 @@ use crate::frame;
 use crate::image::Image;
 use crate::scene::{scene, Simulation};
 
-pub const SCENES: [&str; 4] = ["single", "pair", "trap", "corral"];
 /// Cells sampled for the top view, drawn a pixel each.
 const TOP_SAMPLES: usize = 180;
 /// The oblique view interpolates the surface, so it samples coarser

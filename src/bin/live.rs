@@ -1,11 +1,11 @@
 use eframe::egui;
 use egui::{ColorImage, TextureHandle, TextureOptions};
-use pilot_wave::fps::Rate;
+use pilot_wave::rate::Rate;
 use pilot_wave::image::Image;
-use pilot_wave::live::{Live, View, SCENES};
+use pilot_wave::live::{Live, View};
+use pilot_wave::scene::{default_memory, SCENES};
 
 const SCENE: &str = "pair";
-const MEMORY: f64 = 20.0;
 const MEMORY_RANGE: (f64, f64) = (1.0, 400.0);
 /// Replay speed in bounces per second.
 const SPEED: f64 = 200.0;
@@ -28,7 +28,7 @@ fn color_image(image: &Image) -> ColorImage {
 
 impl App {
     fn new(ctx: &egui::Context) -> App {
-        let live = Live::new(SCENE, MEMORY);
+        let live = Live::new(SCENE, default_memory(SCENE));
         let image = color_image(&live.frame(View::Top));
         App {
             live,
@@ -50,6 +50,9 @@ impl App {
                     ui.selectable_value(&mut name, scene, scene);
                 }
             });
+        if name != self.live.name {
+            memory = default_memory(name);
+        }
         let range = MEMORY_RANGE.0..=MEMORY_RANGE.1;
         let slider = egui::Slider::new(&mut memory, range);
         ui.add(slider.logarithmic(true).text("memory"));

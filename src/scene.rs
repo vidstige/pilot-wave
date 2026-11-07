@@ -10,6 +10,18 @@ const TRAIL: usize = 400;
 const SPRING: f64 = 0.002;
 const CORRAL_RADIUS: f64 = 2.0;
 
+pub const SCENES: [&str; 4] = ["single", "pair", "trap", "corral"];
+
+/// The memory at which each scene shows its phenomenon best: pairs
+/// orbit only at low memory, the corral's rings need very long memory.
+pub fn default_memory(name: &str) -> f64 {
+    match name {
+        "pair" => 8.0,
+        "corral" => 400.0,
+        _ => 20.0,
+    }
+}
+
 pub struct Scene {
     pub bath: Box<dyn Bath>,
     pub walkers: Walkers,
