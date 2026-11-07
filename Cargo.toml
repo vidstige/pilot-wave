@@ -2,5 +2,7 @@
 name = "pilot-wave"
 version = "0.1.0"
 edition = "2021"
+default-run = "pilot-wave"
 
 [dependencies]
+eframe = "0.35.0"
