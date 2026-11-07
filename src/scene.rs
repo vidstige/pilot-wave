@@ -1,4 +1,6 @@
 //! Named starting setups and their bounce by bounce run. No I/O.
+use std::f64::consts::TAU;
+
 use crate::bath::{Bath, Vec2};
 use crate::corral::Corral;
 use crate::open::Open;
@@ -9,14 +11,18 @@ use crate::walker::{confine, spring, step, Walkers};
 const TRAIL: usize = 400;
 const SPRING: f64 = 0.002;
 const CORRAL_RADIUS: f64 = 2.0;
+/// Radius of the triangle the trimer starts on and the tangential
+/// nudge that sets it turning.
+const TRIMER_RADIUS: f64 = 0.42;
+const NUDGE: f64 = 0.02;
 
-pub const SCENES: [&str; 4] = ["single", "pair", "trap", "corral"];
+pub const SCENES: [&str; 5] = ["single", "pair", "trimer", "trap", "corral"];
 
 /// The memory at which each scene shows its phenomenon best: pairs
 /// orbit only at low memory, the corral's rings need very long memory.
 pub fn default_memory(name: &str) -> f64 {
     match name {
-        "pair" => 8.0,
+        "pair" | "trimer" => 8.0,
         "corral" => 400.0,
         _ => 20.0,
     }
@@ -33,6 +39,18 @@ pub struct Scene {
     pub rim: f64,
 }
 
+/// Droplets on a circle, each nudged along it.
+fn ring(n: usize, radius: f64) -> Walkers {
+    let angle = |i: usize| i as f64 * TAU / n as f64;
+    let positions = (0..n)
+        .map(|i| [radius * angle(i).cos(), radius * angle(i).sin()])
+        .collect();
+    let velocities = (0..n)
+        .map(|i| [-NUDGE * angle(i).sin(), NUDGE * angle(i).cos()])
+        .collect();
+    Walkers::new(positions, velocities)
+}
+
 pub fn scene(name: &str, memory: f64) -> Scene {
     let free = |walkers: Walkers, half: f64| Scene {
         bath: Box::new(Open::new(memory, walkers.positions.len())),
@@ -44,13 +62,8 @@ pub fn scene(name: &str, memory: f64) -> Scene {
     };
     match name {
         "single" => free(Walkers::new(vec![[0.0; 2]], vec![[0.0; 2]]), 3.0),
-        "pair" => free(
-            Walkers::new(
-                vec![[-0.35, 0.0], [0.35, 0.0]],
-                vec![[0.0, 0.02], [0.0, -0.02]],
-            ),
-            2.5,
-        ),
+        "pair" => free(ring(2, 0.35), 2.5),
+        "trimer" => free(ring(3, TRIMER_RADIUS), 2.5),
         "trap" => Scene {
             follow: false,
             spring: SPRING,

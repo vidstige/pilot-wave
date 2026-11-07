@@ -5,7 +5,8 @@ use crate::grid::Grid;
 use crate::image::{Color, Image};
 
 pub const DROPLET_RADIUS: f64 = 4.0;
-pub const DROPLET_COLORS: [Color; 2] = [[255, 255, 255], [255, 160, 30]];
+pub const DROPLET_COLORS: [Color; 3] =
+    [[255, 255, 255], [255, 160, 30], [110, 200, 255]];
 
 /// Paint the grid with values from lo to hi spanning the colormap,
 /// each cell as a square of scale by scale pixels.
