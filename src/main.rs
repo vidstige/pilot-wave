@@ -26,6 +26,9 @@ const GLOW_EVERY: f64 = 0.05;
 /// Bins of a whole number of cells, eight on the 1024 grid, so each
 /// gathers the same share of the current.
 const BINS: usize = 128;
+/// Classical particles stop this far inside the domain's edge, within
+/// the sponge that absorbs the wave there.
+const EDGE: f64 = 1.0;
 const PLOT: (usize, usize) = (800, 300);
 
 type Trail = Vec<Vec2>;
@@ -44,6 +47,16 @@ fn glow_field(wave: &Wave, glow: &[f32]) -> Wave {
     field.re = glow.iter().map(|g| g.sqrt()).collect();
     field.keep = wave.keep.clone();
     field
+}
+
+/// Stop classical particles that reach the sponge, as the wave stops
+/// there, before they leave the grid their force is read from.
+fn stop_at_edges(particles: &mut Particles, half: f64) {
+    for (p, v) in particles.positions.iter().zip(&mut particles.velocities) {
+        if p[0].abs().max(p[1].abs()) > half - EDGE {
+            *v = [0.0; 2];
+        }
+    }
 }
 
 /// Standard deviations of the density along x and y.
@@ -226,6 +239,7 @@ fn main() {
         e.wave.step(e.dt);
         let before = particles.positions.clone();
         particles.step(&e.wave, e.dt);
+        stop_at_edges(&mut particles, half);
         if let Some(screen) = &mut screen {
             screen.record(&before, &particles.positions);
             screen.integrate(&e.wave, e.dt);
