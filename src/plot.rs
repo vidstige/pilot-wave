@@ -1,16 +1,16 @@
-//! Curves on a dark background, each scaled to its own peak.
+//! Curves on a dark background on a common scale.
 use crate::image::{Color, Image};
 
 const BACKGROUND: Color = [12, 12, 16];
 const MARGIN: usize = 8;
 
-/// Draw each series as a polyline, scaled to its own peak so shapes
-/// can be compared. Negative values sit on the baseline.
+/// Draw each series as a polyline, all scaled to the highest peak.
+/// Negative values sit on the baseline.
 pub fn curves(width: usize, height: usize, series: &[(&[f64], Color)]) -> Image {
     let mut image = Image::new(width, height, BACKGROUND);
     let inner = (width - 2 * MARGIN, height - 2 * MARGIN);
+    let peak = series.iter().flat_map(|(v, _)| v.iter()).cloned().fold(1e-300, f64::max);
     for (values, color) in series {
-        let peak = values.iter().cloned().fold(0.0, f64::max).max(1e-300);
         let point = |i: usize| {
             let x = MARGIN as f64 + i as f64 * inner.0 as f64 / (values.len() - 1).max(1) as f64;
             let y = MARGIN as f64 + inner.1 as f64 * (1.0 - values[i].max(0.0) / peak);

@@ -19,7 +19,7 @@ const OBLIQUE_PIXELS: usize = 360;
 const OBLIQUE_SAMPLES: usize = 1;
 /// Particles closer than this to the domain's edge are dropped.
 const EDGE: f64 = 1.0;
-const BINS: usize = 120;
+const BINS: usize = 128;
 const SEED: u64 = 1;
 /// The plot's curves: arrivals, integrated current and Fraunhofer.
 const LEGEND: [(&str, Color); 3] = [
