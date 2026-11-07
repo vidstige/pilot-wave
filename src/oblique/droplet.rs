@@ -1,6 +1,6 @@
 //! Droplets: dark glass spheres resting in dimples of the bath.
 use super::{add, dot, fresnel, mul, normalize, reflect, scale};
-use super::{sky, smoothstep, sub, Vec3};
+use super::{sky, sub, Vec3};
 use super::{FILL, KEY, KEY_COLOR, LIQUID};
 use crate::bath::Vec2;
 
@@ -17,8 +17,6 @@ const IOR: f64 = 1.4;
 const CLARITY: f64 = 0.1;
 const TINT: f64 = 0.75;
 const GLOSS: f64 = 120.0;
-/// Angular radius of the key light, as a tangent.
-const PENUMBRA: f64 = 0.25;
 
 pub struct Droplet {
     pub center: Vec3,
@@ -59,21 +57,6 @@ fn cover(x: &Droplet, p: Vec3, n: Vec3) -> f64 {
 /// Ambient occlusion at p with normal n, from 0 open to 1 covered.
 pub fn occlusion(droplets: &[Droplet], p: Vec3, n: Vec3) -> f64 {
     droplets.iter().map(|x| cover(x, p, n)).sum::<f64>().min(1.0)
-}
-
-/// Fraction of the key light reaching p past the droplet, softened
-/// by how far behind it p lies.
-fn shadow(x: &Droplet, p: Vec3) -> f64 {
-    let d = sub(x.center, p);
-    let along = dot(d, normalize(KEY));
-    let miss = (dot(d, d) - along * along).sqrt();
-    let w = PENUMBRA * along;
-    if along > 0.0 { smoothstep(RADIUS - w, RADIUS + w, miss) } else { 1.0 }
-}
-
-/// Fraction of the key light reaching p past all droplets.
-pub fn sunlight(droplets: &[Droplet], p: Vec3) -> f64 {
-    droplets.iter().map(|x| shadow(x, p)).product()
 }
 
 /// What a droplet mirrors: the sky, and below the horizon a flat lit
@@ -130,20 +113,6 @@ mod tests {
 
     fn resting() -> Droplet {
         Droplet { center: [0.0, 0.0, RADIUS], tint: [1.0; 3] }
-    }
-
-    /// Ground point at distance r from the contact, towards the key.
-    fn towards_key(r: f64) -> Vec3 {
-        let l = normalize([KEY[0], KEY[1], 0.0]);
-        [l[0] * r, l[1] * r, 0.0]
-    }
-
-    #[test]
-    fn shadow_falls_away_from_the_key_light() {
-        let x = resting();
-        let r = 1.7 * RADIUS;
-        assert!(shadow(&x, towards_key(-r)) < 0.1);
-        assert_eq!(shadow(&x, towards_key(r)), 1.0);
     }
 
     #[test]

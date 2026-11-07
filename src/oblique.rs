@@ -143,11 +143,10 @@ fn sky(r: Vec3) -> Vec3 {
 fn surface(scene: &Scene, p: Vec3, n: Vec3, v: Vec3) -> Vec3 {
     let l = normalize(KEY);
     let h = normalize(add(l, v));
-    let sun = droplet::sunlight(&scene.droplets, p);
     let open = 1.0 - droplet::occlusion(&scene.droplets, p, n);
     let lambert = dot(n, l).max(0.0);
-    let diffuse = sun * lambert + open * FILL * (0.5 + 0.5 * n[2]);
-    let specular = sun * dot(n, h).max(0.0).powf(SHININESS);
+    let diffuse = lambert + open * FILL * (0.5 + 0.5 * n[2]);
+    let specular = dot(n, h).max(0.0).powf(SHININESS);
     let f = fresnel(dot(n, v));
     let r = reflect(n, v);
     // Only the double right under a droplet: the exaggerated waves
