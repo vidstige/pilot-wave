@@ -3,6 +3,7 @@ pub mod colormap;
 pub mod experiment;
 pub mod grid;
 pub mod image;
+pub mod live;
 pub mod oblique;
 pub mod packet;
 pub mod particles;
