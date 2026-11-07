@@ -14,7 +14,7 @@ const DIMPLE: (f64, f64) = (0.3, 0.8);
 const IOR: f64 = 1.4;
 /// Fraction of light passing through, and how much identity color
 /// it picks up.
-const CLARITY: f64 = 0.15;
+const CLARITY: f64 = 0.1;
 const TINT: f64 = 0.75;
 const GLOSS: f64 = 120.0;
 /// Angular radius of the key light, as a tangent.
