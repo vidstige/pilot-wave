@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use eframe::egui;
 use egui::{ColorImage, TextureHandle, TextureOptions};
-use pilot_wave::fps::Fps;
+use pilot_wave::fps::Rate;
 use pilot_wave::image::Image;
 use pilot_wave::live::{Live, View, SCENES};
 
@@ -17,7 +17,7 @@ struct App {
     bounces: usize,
     view: View,
     paused: bool,
-    fps: Fps,
+    fps: Rate,
     last: Instant,
     texture: TextureHandle,
 }
@@ -36,7 +36,7 @@ impl App {
             bounces: BOUNCES,
             view: View::Top,
             paused: false,
-            fps: Fps::default(),
+            fps: Rate::default(),
             last: Instant::now(),
             texture: ctx.load_texture("frame", image, TextureOptions::LINEAR),
         }
@@ -82,7 +82,7 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let now = Instant::now();
-        self.fps.tick((now - self.last).as_secs_f64());
+        self.fps.tick(1.0, (now - self.last).as_secs_f64());
         self.last = now;
         egui::Panel::left("controls").show(ui, |ui| self.controls(ui));
         if !self.paused {
