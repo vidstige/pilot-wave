@@ -17,8 +17,10 @@ quantum-like behaviour is. The Python prototype it grew from lives in
 cargo run --release -- <scene> [memory] [bounces] [every] [out] [view]
 ```
 
-- `scene` is `single`, `pair`, `trap` or `corral`.
-- `memory` is how many bounces a wave lasts, default 20.
+- `scene` is `single`, `pair`, `trimer`, `lattice`, `trap` or `corral`.
+- `memory` is how many bounces a wave lasts, default 20. Each scene
+  has a memory it works best at: 8 for the pair and trimer, 3 for the
+  lattice, 400 for the corral.
 - `bounces` is how long to run, default 1200; `every` writes a frame
   every so many bounces, default once at the end.
 - `out` is the output directory, default `out`.
@@ -50,22 +52,26 @@ bounces per second actually reached. The speed is kept against the
 wall clock, so it does not depend on the frame rate, and slow speeds
 run a bounce every few frames. A frame plays at most a tenth of a
 second of bounces, so when the simulation cannot keep up the replay
-falls behind the set speed instead of stalling. Changing the scene or
-memory starts over. The bath is sampled coarser than the command line
-renders, on all cores, to keep it fluid; long memories still slow it
-down since every remembered bounce adds a wave to evaluate.
+falls behind the set speed instead of stalling. Changing the scene
+starts over at that scene's own memory; changing the memory starts
+over too. The bath is sampled coarser than the command line renders,
+on all cores, to keep it fluid. `live --screenshot images/live.png`
+runs for two seconds, saves the window and quits.
 
 ![The live viewer](images/live.png)
 
 ## The model
 
-Lengths are in Faraday wavelengths and time is in bounces. In the
-unbounded bath (`field.rs`) the wave left by an impact at `x_n` is
-`J0(k |x - x_n|)` with `k = 2π`, decaying by `exp(-1/memory)` per
-bounce. Each bounce the droplet feels the slope of the summed field,
-loses a fixed fraction of its momentum and steps by its velocity
-(`walker.rs`). `bessel.rs` holds J0 and J1 so there is no SciPy
-equivalent to depend on.
+Lengths are in Faraday wavelengths and time is in bounces. Each
+droplet owns its wake (`wake.rs`): a ring of its past impacts, where
+the wave left by an impact at `x_n` is `J0(k |x - x_n|)` with
+`k = 2π`, weighted by `exp(-age/memory)`. The weight is computed while
+summing, so nothing is aged per bounce and no weights are stored. The
+unbounded bath (`open.rs`) is the sum of every droplet's wake. Each
+bounce the droplet feels the slope of the bath, loses a fixed fraction
+of its momentum and steps by its velocity (`walker.rs`). `bessel.rs`
+holds J0 and J1; the wake reads them from a table built once, which
+made a 10k-bounce pair at memory 400 go from 9.0 s to 1.3 s.
 
 The bouncer at rest sits on top of its own wave hill. The hill grows
 with memory, and once `k² · FORCE · memory² > 2 · DRAG` (memory about
@@ -99,8 +105,17 @@ sampled from matplotlib by `tools/colormaps.py`.
 **Pairs.** Two droplets started 0.7 wavelengths apart with a small
 tangential nudge lock into orbit at a separation of 0.73 wavelengths
 at memory 8. Started 1.6 apart they orbit at 1.69. Experiments find
-orbit diameters near `(n - 0.2)` wavelengths. At memory 20 and above
-the orbits break up and the droplets scatter, as in experiments.
+orbit diameters near `(n - 0.2)` wavelengths. The orbit holds only in
+a narrow window of memory, about 8 to 12 depending on drag; beyond it
+the pair breaks up and scatters, as it does in experiments at high
+memory.
+
+**Trimer and lattice.** Three droplets on a circle of radius 0.42 with
+a tangential nudge turn as a bound triangle of side 0.63, indefinitely
+at memory 8. Rings of four to seven walkers fall apart. Below the
+walking threshold, bouncers bind into crystals instead: the `lattice`
+scene is a hexagonal patch of 19 bouncers at spacing 0.61 and memory
+3, which holds its shape, like the lattices of Eddi et al. (2009).
 
 ![An orbiting pair](images/pair_oblique.png)
 
