@@ -28,10 +28,6 @@ impl Image {
             }
         }
     }
-
-    pub fn bytes(&self) -> Vec<u8> {
-        self.pixels.iter().flatten().copied().collect()
-    }
 }
 
 /// Linear blend of two colors, t in 0..1.
