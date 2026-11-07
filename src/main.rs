@@ -1,20 +1,200 @@
 use std::env;
+use std::fs;
 
-use pilot_wave::experiment::{experiment, fraunhofer, SINGLE_SLIT_WIDTH, SLIT_SEPARATION, SLIT_WIDTH};
+use pilot_wave::experiment::{
+    experiment, mean_transmission, pattern, transmission, Experiment, BARRIER_HEIGHT,
+    BARRIER_WIDTH, BOX_HALF, ENERGY, SPEED,
+};
 use pilot_wave::grid::Vec2;
 use pilot_wave::particles::{Kind, Particles};
 use pilot_wave::rng::Rng;
 use pilot_wave::screen::Screen;
+use pilot_wave::wave::Wave;
 use pilot_wave::{plot, png, view};
 
 const PIXELS: usize = 800;
 const GRID: usize = 1024;
+/// The traps and the box fit a smaller domain.
+const SMALL_GRID: usize = 256;
 /// Time between frames and the number of particles whose trails are
 /// drawn.
 const FRAME_EVERY: f64 = 0.5;
 const TRAILS: usize = 300;
+/// Time between samples of the density added into the
+/// time-integrated picture behind the trails.
+const GLOW_EVERY: f64 = 0.05;
 const BINS: usize = 120;
 const PLOT: (usize, usize) = (800, 300);
+
+type Trail = Vec<Vec2>;
+
+fn distance(a: Vec2, b: Vec2) -> f64 {
+    (a[0] - b[0]).hypot(a[1] - b[1])
+}
+
+fn densities(wave: &Wave) -> Vec<f32> {
+    (0..wave.n * wave.n).map(|k| wave.density(k)).collect()
+}
+
+/// The time-integrated density as a field to draw, walls included.
+fn glow_field(wave: &Wave, glow: &[f32]) -> Wave {
+    let mut field = Wave::new(wave.n, wave.dx);
+    field.re = glow.iter().map(|g| g.sqrt()).collect();
+    field.keep = wave.keep.clone();
+    field
+}
+
+/// Standard deviations of the density along x and y.
+fn spread(wave: &Wave) -> Vec2 {
+    let mut sums = [0.0; 5];
+    for k in 0..wave.n * wave.n {
+        let p = wave.position((k % wave.n, k / wave.n));
+        let w = wave.density(k) as f64;
+        let terms = [w, w * p[0], w * p[1], w * p[0] * p[0], w * p[1] * p[1]];
+        for (s, t) in sums.iter_mut().zip(terms) {
+            *s += t;
+        }
+    }
+    let [_, x, y, xx, yy] = sums.map(|s| s / sums[0]);
+    [(xx - x * x).sqrt(), (yy - y * y).sqrt()]
+}
+
+fn largest_displacement(start: &[Vec2], end: &[Vec2]) -> f64 {
+    start.iter().zip(end).map(|(a, b)| distance(*a, *b)).fold(0.0, f64::max)
+}
+
+/// Largest departure of a trail from the circle that the packet
+/// centre, starting at `center`, traces around the trap's middle,
+/// shifted by the particle's starting offset from that centre.
+fn orbit_error(trails: &[Trail], center: Vec2) -> f64 {
+    let radius = center[0].hypot(center[1]);
+    let error = |t: &Trail| {
+        let middle = [t[0][0] - center[0], t[0][1] - center[1]];
+        t.iter().map(|p| (distance(*p, middle) - radius).abs()).fold(0.0, f64::max)
+    };
+    trails.iter().map(error).fold(0.0, f64::max)
+}
+
+/// Cells next to a wall, where the guidance is least accurate.
+fn beside_wall(wave: &Wave) -> Vec<bool> {
+    let n = wave.n;
+    let beside = |k: usize| {
+        let (i, j) = (k % n, k / n);
+        let inner = i > 0 && j > 0 && i < n - 1 && j < n - 1;
+        let wall = || [k - 1, k + 1, k - n, k + n].iter().any(|&m| wave.keep[m] == 0.0);
+        inner && wave.keep[k] > 0.0 && wall()
+    };
+    (0..n * n).map(beside).collect()
+}
+
+/// Particles in the cells beside walls against the probability there,
+/// which equivariance says should agree.
+fn print_walls(name: &str, wave: &Wave, positions: &[Vec2]) {
+    let beside = beside_wall(wave);
+    let cell = |p: &Vec2| {
+        let (x, y) = wave.cell(*p);
+        let clamp = |c: f64| c.round().clamp(0.0, (wave.n - 1) as f64) as usize;
+        wave.index((clamp(x), clamp(y)))
+    };
+    let stuck = positions.iter().filter(|p| beside[cell(p)]).count();
+    let fraction = stuck as f64 / positions.len() as f64;
+    let probability: f64 = (0..wave.n * wave.n)
+        .filter(|&k| beside[k])
+        .map(|k| wave.density(k) as f64 * wave.dx * wave.dx)
+        .sum();
+    println!("{name}: {fraction:.4} of the particles beside walls, probability {probability:.4}");
+}
+
+fn print_screen(name: &str, screen: &Screen, count: usize) {
+    let arrived: f64 = screen.hits.iter().sum();
+    let through: f64 = screen.flux.iter().sum();
+    let fraction = arrived / count as f64;
+    println!(
+        "{name}: {arrived} of {count} particles reached the screen ({fraction:.4}), \
+         probability through it {through:.4}"
+    );
+}
+
+/// The barrier's transmission against the analytic one, and where in
+/// the packet the transmitted particles started.
+fn print_barrier(e: &Experiment, start: &[Vec2], end: &[Vec2]) {
+    let height = BARRIER_HEIGHT * ENERGY;
+    let spread = 1.0 / (2.0 * e.packet.width[1]);
+    let mean = mean_transmission(SPEED, spread, height, BARRIER_WIDTH);
+    let plane = transmission(SPEED, height, BARRIER_WIDTH);
+    println!("barrier: analytic transmission {mean:.4} over the packet, {plane:.4} at its centre");
+    let started = |through: bool| {
+        let pairs = start.iter().zip(end);
+        pairs.filter(move |(_, b)| (b[1] > 0.0) == through).map(|(a, _)| a[1])
+    };
+    let rear = started(true).fold(f64::MAX, f64::min);
+    let front = started(false).fold(f64::MIN, f64::max);
+    println!("barrier: transmitted started at y >= {rear:.3}, reflected at y <= {front:.3}");
+}
+
+fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail], initial: &[f32]) {
+    let s = spread(&e.wave);
+    match e.name {
+        "harmonic" => println!(
+            "harmonic: spread {:.4} x {:.4}, orbit error {:.4}, largest displacement {:.4}",
+            s[0],
+            s[1],
+            orbit_error(trails, e.packet.center),
+            largest_displacement(start, end)
+        ),
+        "ground" => {
+            let peak = initial.iter().cloned().fold(0.0, f32::max);
+            let now = densities(&e.wave);
+            let change = now.iter().zip(initial).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
+            println!(
+                "ground: largest displacement {:.2e}, largest density change {:.2e} of the peak",
+                largest_displacement(start, end),
+                change / peak
+            );
+        }
+        "free" => {
+            let w = e.packet.width;
+            let t = e.wave.time;
+            let expected = w.map(|w| w * (1.0 + (t / (2.0 * w * w)).powi(2)).sqrt());
+            println!(
+                "free: spread {:.4} x {:.4}, expected {:.4} x {:.4}",
+                s[0], s[1], expected[0], expected[1]
+            );
+        }
+        "box" => {
+            let outside = end.iter().filter(|p| p[0].abs().max(p[1].abs()) > BOX_HALF).count();
+            println!("box: norm {:.4}, {outside} particles outside the box", e.wave.norm());
+            print_walls(e.name, &e.wave, end);
+        }
+        "barrier" => print_barrier(e, start, end),
+        "double-slit" | "single-slit" | "disc" => print_walls(e.name, &e.wave, end),
+        _ => {}
+    }
+}
+
+/// Write the screen as a plot and a table, arrivals and theory scaled
+/// to the same total as the probability current.
+fn write_screen(out: &str, name: &str, screen: &Screen) {
+    let total: f64 = screen.flux.iter().sum();
+    let scale = |v: Vec<f64>| {
+        let sum: f64 = v.iter().sum();
+        v.iter().map(|x| x * total / sum.max(1e-300)).collect::<Vec<f64>>()
+    };
+    let hits = scale(screen.hits.clone());
+    let theory = scale((0..BINS).map(|b| pattern(name, screen.x(b))).collect());
+    let series: [(&[f64], _); 3] = [
+        (&hits, [255, 255, 255]),
+        (&screen.flux, [80, 200, 255]),
+        (&theory, [255, 160, 30]),
+    ];
+    let image = plot::curves(PLOT.0, PLOT.1, &series);
+    png::write(format!("{out}/{name}_screen.png"), &image).expect("write screen plot");
+    let rows: String = (0..BINS)
+        .map(|b| format!("{},{},{},{}\n", screen.x(b), hits[b], screen.flux[b], theory[b]))
+        .collect();
+    fs::write(format!("{out}/{name}_screen.csv"), format!("x,hits,flux,theory\n{rows}"))
+        .expect("write screen table");
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -25,17 +205,21 @@ fn main() {
     let count: usize = args.get(2).map(|s| s.parse().unwrap()).unwrap_or(2000);
     let out = args.get(3).map(String::as_str).unwrap_or("out");
     let kind = if args.get(4).map(String::as_str) == Some("classical") { Kind::Classical } else { Kind::Quantum };
-    std::fs::create_dir_all(out).expect("create output directory");
+    fs::create_dir_all(out).expect("create output directory");
 
-    let mut e = experiment(name, GRID, kind);
+    let n = if matches!(name, "harmonic" | "ground" | "box") { SMALL_GRID } else { GRID };
+    let mut e = experiment(name, n, kind);
     let mut rng = Rng::new(1);
-    let positions: Vec<Vec2> = (0..count).map(|_| e.packet.sample(&mut rng)).collect();
-    let mut particles = Particles::new(kind, positions, e.packet.wavevector);
-    let mut trails: Vec<Vec<Vec2>> = particles.positions[..count.min(TRAILS)].iter().map(|p| vec![*p]).collect();
+    let start: Vec<Vec2> = (0..count).map(|_| e.packet.sample(&mut rng)).collect();
+    let mut particles = Particles::new(kind, start.clone(), e.packet.wavevector);
+    let mut trails: Vec<Trail> = start[..count.min(TRAILS)].iter().map(|p| vec![*p]).collect();
     let half = e.wave.extent() / 2.0;
     let mut screen = e.screen.map(|y| Screen::new(y, half, BINS));
+    let initial = densities(&e.wave);
+    let mut glow = vec![0.0; n * n];
     let steps = (e.duration / e.dt).ceil() as usize;
     let per_frame = (FRAME_EVERY / e.dt) as usize;
+    let per_glow = (GLOW_EVERY / e.dt) as usize;
     for step in 1..=steps {
         e.wave.step(e.dt);
         let before = particles.positions.clone();
@@ -47,32 +231,24 @@ fn main() {
         for (trail, p) in trails.iter_mut().zip(&particles.positions) {
             trail.push(*p);
         }
+        if step % per_glow == 0 {
+            for (g, d) in glow.iter_mut().zip(densities(&e.wave)) {
+                *g += d;
+            }
+        }
         if step % per_frame == 0 || step == steps {
             let mut image = view::field(&e.wave, PIXELS, view::Style::Phase);
-            let heads: Vec<Vec<Vec2>> = particles.positions.iter().map(|p| vec![*p]).collect();
+            let heads: Vec<Trail> = particles.positions.iter().map(|p| vec![*p]).collect();
             view::particles(&mut image, &e.wave, &heads);
             png::write(format!("{out}/{name}_{:04}.png", step / per_frame), &image).expect("write frame");
         }
     }
-    let mut image = view::field(&e.wave, PIXELS, view::Style::Density);
+    let mut image = view::field(&glow_field(&e.wave, &glow), PIXELS, view::Style::Density);
     view::particles(&mut image, &e.wave, &trails);
     png::write(format!("{out}/{name}_trajectories.png"), &image).expect("write trajectories");
     if let Some(screen) = &screen {
-        let theory: Vec<f64> = (0..BINS)
-            .map(|b| match name {
-                "double-slit" => fraunhofer(screen.x(b), &[-SLIT_SEPARATION / 2.0, SLIT_SEPARATION / 2.0], SLIT_WIDTH),
-                "single-slit" => fraunhofer(screen.x(b), &[0.0], SINGLE_SLIT_WIDTH),
-                _ => 0.0,
-            })
-            .collect();
-        let series: [(&[f64], _); 3] = [
-            (&screen.hits, [255, 255, 255]),
-            (&screen.flux, [80, 200, 255]),
-            (&theory, [255, 160, 30]),
-        ];
-        let image = plot::curves(PLOT.0, PLOT.1, &series);
-        png::write(format!("{out}/{name}_screen.png"), &image).expect("write screen plot");
-        let arrived: f64 = screen.hits.iter().sum();
-        println!("{name}: {arrived} of {count} particles reached the screen");
+        write_screen(out, name, screen);
+        print_screen(name, screen, count);
     }
+    print_summary(&e, &start, &particles.positions, &trails, &initial);
 }
