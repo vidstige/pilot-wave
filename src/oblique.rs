@@ -72,12 +72,15 @@ fn bilinear(grid: &Grid, p: Vec2) -> f64 {
     row(j) + (row(j + 1) - row(j)) * fy
 }
 
-/// Surface height at p, scaled and faded out towards the edge.
+/// Surface height at p: scaled waves fading out towards the edge,
+/// dipping under each droplet.
 fn elevation(scene: &Scene, p: Vec2) -> f64 {
     let grid = scene.grid;
     let d = [p[0] - grid.center[0], p[1] - grid.center[1]];
     let r = (d[0] * d[0] + d[1] * d[1]).sqrt() / grid.half;
-    scene.k * bilinear(grid, p) * (1.0 - smoothstep(FADE.0, FADE.1, r))
+    let fade = 1.0 - smoothstep(FADE.0, FADE.1, r);
+    let dips: f64 = scene.droplets.iter().map(|x| droplet::dimple(x, p)).sum();
+    scene.k * bilinear(grid, p) * fade - dips
 }
 
 fn normal(scene: &Scene, p: Vec2) -> Vec3 {
@@ -155,17 +158,24 @@ fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
     }
 }
 
-/// Droplets at the given positions resting on the grid's surface.
+/// Droplets at the given positions resting in dimples of the surface.
 fn scene<'a>(grid: &'a Grid, positions: &[Vec2]) -> Scene<'a> {
     let k = RELIEF * grid.half / grid.peak().max(f64::MIN_POSITIVE);
-    let flat = Scene { grid, k, droplets: vec![] };
     let droplets = positions.iter().zip(DROPLET_COLORS.iter().cycle())
         .map(|(&p, &color)| Droplet {
-            center: [p[0], p[1], elevation(&flat, p) + droplet::RADIUS],
+            center: [p[0], p[1], 0.0],
             tint: linear(color),
         })
         .collect();
-    Scene { droplets, ..flat }
+    let mut scene = Scene { grid, k, droplets };
+    let rest = droplet::RADIUS * (1.0 - droplet::SINK);
+    let heights: Vec<f64> = positions.iter()
+        .map(|&p| elevation(&scene, p) + rest)
+        .collect();
+    for (x, z) in scene.droplets.iter_mut().zip(heights) {
+        x.center[2] = z;
+    }
+    scene
 }
 
 /// Oblique view of the grid with droplets at the given positions,
@@ -243,6 +253,16 @@ mod tests {
         let a = render(&bump(1.0), &[], 32, 32, 4);
         let b = render(&bump(4.0), &[], 32, 32, 4);
         assert_eq!(a.pixels, b.pixels);
+    }
+
+    #[test]
+    fn droplet_sinks_slightly_into_a_dimple_of_a_calm_bath() {
+        let grid = Grid::zeros([0.0; 2], 1.0, 40);
+        let scene = scene(&grid, &[[0.0; 2]]);
+        let under = elevation(&scene, [0.0; 2]);
+        let bottom = scene.droplets[0].center[2] - droplet::RADIUS;
+        assert!(under < elevation(&scene, [0.5, 0.0]));
+        assert!(bottom < under && under - bottom < 0.1 * droplet::RADIUS);
     }
 
     #[test]
