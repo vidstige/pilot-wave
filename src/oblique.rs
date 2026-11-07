@@ -1,10 +1,13 @@
 //! Oblique view: the grid as a lit liquid surface, droplets as spheres.
+mod droplet;
+
 use std::thread;
 
 use crate::bath::Vec2;
 use crate::grid::Grid;
 use crate::image::{Color, Image};
 use crate::topdown::DROPLET_COLORS;
+use droplet::Droplet;
 
 type Vec3 = [f64; 3];
 
@@ -17,8 +20,6 @@ const TILT: f64 = 1.05;
 /// Camera distance in grid half widths, and tan of half the view angle.
 const DISTANCE: f64 = 4.0;
 const LENS: f64 = 0.17;
-/// In wavelengths, like the grid.
-const DROPLET_RADIUS: f64 = 0.09;
 const KEY: Vec3 = [-0.7, 0.5, 0.5];
 const KEY_COLOR: Vec3 = [12.0, 11.0, 9.5];
 const FILL: f64 = 0.35;
@@ -54,6 +55,13 @@ fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
+struct Scene<'a> {
+    grid: &'a Grid,
+    /// Scale from grid values to world heights.
+    k: f64,
+    droplets: Vec<Droplet>,
+}
+
 fn bilinear(grid: &Grid, p: Vec2) -> f64 {
     let m = (grid.n - 2) as f64;
     let (x, y) = grid.cell(p);
@@ -64,25 +72,27 @@ fn bilinear(grid: &Grid, p: Vec2) -> f64 {
     row(j) + (row(j + 1) - row(j)) * fy
 }
 
-/// Surface height at p, scaled by k and faded out towards the edge.
-fn elevation(grid: &Grid, k: f64, p: Vec2) -> f64 {
+/// Surface height at p, scaled and faded out towards the edge.
+fn elevation(scene: &Scene, p: Vec2) -> f64 {
+    let grid = scene.grid;
     let d = [p[0] - grid.center[0], p[1] - grid.center[1]];
     let r = (d[0] * d[0] + d[1] * d[1]).sqrt() / grid.half;
-    k * bilinear(grid, p) * (1.0 - smoothstep(FADE.0, FADE.1, r))
+    scene.k * bilinear(grid, p) * (1.0 - smoothstep(FADE.0, FADE.1, r))
 }
 
-fn normal(grid: &Grid, k: f64, p: Vec2) -> Vec3 {
-    let e = grid.half / grid.n as f64;
-    let h = |dx, dy| elevation(grid, k, [p[0] + dx, p[1] + dy]);
+fn normal(scene: &Scene, p: Vec2) -> Vec3 {
+    let e = scene.grid.half / scene.grid.n as f64;
+    let h = |dx, dy| elevation(scene, [p[0] + dx, p[1] + dy]);
     normalize([h(-e, 0.0) - h(e, 0.0), h(0.0, -e) - h(0.0, e), 2.0 * e])
 }
 
 /// Distance along the ray to the surface, marching one cell at a time.
-fn march(grid: &Grid, k: f64, o: Vec3, d: Vec3) -> f64 {
+fn march(scene: &Scene, o: Vec3, d: Vec3) -> f64 {
+    let grid = scene.grid;
     let top = RELIEF * grid.half;
     let dt = 2.0 * grid.half / grid.n as f64 / d[0].hypot(d[1]);
     let gap = |t: f64| {
-        o[2] + t * d[2] - elevation(grid, k, [o[0] + t * d[0], o[1] + t * d[1]])
+        o[2] + t * d[2] - elevation(scene, [o[0] + t * d[0], o[1] + t * d[1]])
     };
     let mut t = (top - o[2]) / d[2];
     let mut g = gap(t);
@@ -94,14 +104,6 @@ fn march(grid: &Grid, k: f64, o: Vec3, d: Vec3) -> f64 {
         t += dt;
         g = next;
     }
-}
-
-/// Distance along a ray to a sphere, if it hits.
-fn sphere(o: Vec3, d: Vec3, c: Vec3, r: f64) -> Option<f64> {
-    let oc = sub(o, c);
-    let b = dot(oc, d);
-    let disc = b * b - dot(oc, oc) + r * r;
-    (disc > 0.0).then(|| -b - disc.sqrt())
 }
 
 fn sky(r: Vec3) -> Vec3 {
@@ -137,24 +139,33 @@ fn subpixel(k: usize, n: usize) -> (f64, f64) {
     ((k + 0.5) / n as f64, (0.5 + k * GOLDEN).fract())
 }
 
-fn trace(grid: &Grid, k: f64, droplets: &[Vec3], o: Vec3, d: Vec3) -> Vec3 {
+fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
     let v = scale(d, -1.0);
-    let r = DROPLET_RADIUS;
-    let hit = droplets.iter().zip(DROPLET_COLORS.iter().cycle())
-        .filter_map(|(&c, &color)| Some((sphere(o, d, c, r)?, c, color)))
-        .min_by(|a, b| a.0.total_cmp(&b.0));
-    let t = march(grid, k, o, d);
-    match hit {
-        Some((s, c, color)) if s < t => {
+    let t = march(scene, o, d);
+    match droplet::hit(&scene.droplets, o, d) {
+        Some((s, x)) if s < t => {
             let p = add(o, scale(d, s));
-            let n = scale(sub(p, c), 1.0 / r);
-            shade(n, v, linear(color))
+            let n = scale(sub(p, x.center), 1.0 / droplet::RADIUS);
+            shade(n, v, x.tint)
         }
         _ => {
             let p = [o[0] + t * d[0], o[1] + t * d[1]];
-            shade(normal(grid, k, p), v, LIQUID)
+            shade(normal(scene, p), v, LIQUID)
         }
     }
+}
+
+/// Droplets at the given positions resting on the grid's surface.
+fn scene<'a>(grid: &'a Grid, positions: &[Vec2]) -> Scene<'a> {
+    let k = RELIEF * grid.half / grid.peak().max(f64::MIN_POSITIVE);
+    let flat = Scene { grid, k, droplets: vec![] };
+    let droplets = positions.iter().zip(DROPLET_COLORS.iter().cycle())
+        .map(|(&p, &color)| Droplet {
+            center: [p[0], p[1], elevation(&flat, p) + droplet::RADIUS],
+            tint: linear(color),
+        })
+        .collect();
+    Scene { droplets, ..flat }
 }
 
 /// Oblique view of the grid with droplets at the given positions,
@@ -166,10 +177,7 @@ pub fn render(
     height: usize,
     samples: usize,
 ) -> Image {
-    let k = RELIEF * grid.half / grid.peak().max(f64::MIN_POSITIVE);
-    let spheres: Vec<Vec3> = droplets.iter()
-        .map(|&p| [p[0], p[1], elevation(grid, k, p) + DROPLET_RADIUS])
-        .collect();
+    let scene = scene(grid, droplets);
     let forward = [0.0, TILT.sin(), -TILT.cos()];
     let up = [0.0, TILT.cos(), TILT.sin()];
     let target = [grid.center[0], grid.center[1], 0.0];
@@ -184,7 +192,7 @@ pub fn render(
         let (x, y) = ((i % width) as f64, (i / width) as f64);
         let c = (0..samples)
             .map(|i| subpixel(i, samples))
-            .map(|(dx, dy)| trace(grid, k, &spheres, eye, ray(x + dx, y + dy)))
+            .map(|(dx, dy)| trace(&scene, eye, ray(x + dx, y + dy)))
             .fold([0.0; 3], add);
         srgb(scale(c, 1.0 / samples as f64))
     };
@@ -223,9 +231,9 @@ mod tests {
     #[test]
     fn bump_is_brighter_on_the_side_facing_the_key_light() {
         let grid = bump(1.0);
-        let k = RELIEF / grid.peak();
+        let scene = scene(&grid, &[]);
         let up = [0.0, 0.0, 1.0];
-        let lit = |x| shade(normal(&grid, k, [x, 0.0]), up, LIQUID);
+        let lit = |x| shade(normal(&scene, [x, 0.0]), up, LIQUID);
         assert!(lit(-0.2).iter().sum::<f64>() > lit(0.2).iter().sum());
     }
 
