@@ -142,14 +142,18 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
 }
 
 /// Fraunhofer intensity on the screen for slits of the given width at
-/// the given centres, as a function of x on the screen.
+/// the given centres, per unit of x on the screen. The angular
+/// intensity of the cylindrical wave falls as 1/r and meets the flat
+/// screen obliquely, which together give a factor cos²θ.
 pub fn fraunhofer(x: f64, centers: &[f64], width: f64) -> f64 {
-    let sin = x / x.hypot(SCREEN - WALL / 2.0);
+    let r = x.hypot(SCREEN - WALL / 2.0);
+    let (sin, cos) = (x / r, (SCREEN - WALL / 2.0) / r);
     let beta = PI * width * sin;
     let envelope = if beta.abs() < 1e-9 { 1.0 } else { (beta.sin() / beta).powi(2) };
     let (re, im) = centers.iter().fold((0.0, 0.0), |(re, im), c| {
         let phase = TAU * c * sin;
         (re + phase.cos(), im + phase.sin())
     });
-    envelope * (re * re + im * im) / (centers.len() * centers.len()) as f64
+    let array = (re * re + im * im) / (centers.len() * centers.len()) as f64;
+    cos * cos * envelope * array
 }
