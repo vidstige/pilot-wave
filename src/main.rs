@@ -1,8 +1,10 @@
+mod bath;
 mod bessel;
 mod colormap;
 mod field;
 mod grid;
 mod image;
+mod modes;
 mod png;
 mod rng;
 mod topdown;
@@ -10,7 +12,8 @@ mod walker;
 
 use std::env;
 
-use field::{Field, Vec2};
+use bath::{Bath, Vec2};
+use field::Field;
 use grid::Grid;
 use rng::Rng;
 use walker::{free, spring, step, Walkers};
@@ -60,9 +63,9 @@ fn centroid(points: &[Vec2]) -> Vec2 {
     [sum[0] / n, sum[1] / n]
 }
 
-fn frame(field: &Field, scene: &Scene, trails: &[Vec<Vec2>], path: &str) {
+fn frame(bath: &impl Bath, scene: &Scene, trails: &[Vec<Vec2>], path: &str) {
     let center = if scene.follow { centroid(&scene.walkers.positions) } else { [0.0; 2] };
-    let grid = Grid::sample(field, center, scene.half, PIXELS);
+    let grid = Grid::sample(bath, center, scene.half, PIXELS);
     let peak = grid.peak();
     let mut image = topdown::paint(&grid, &colormap::COOLWARM, -peak, peak);
     topdown::droplets(&mut image, &grid, trails);

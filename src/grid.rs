@@ -1,5 +1,5 @@
 //! A scalar field sampled on a square grid of cells around a center.
-use crate::field::{Field, Vec2};
+use crate::bath::{Bath, Vec2};
 
 pub struct Grid {
     pub n: usize,
@@ -13,11 +13,11 @@ impl Grid {
         Grid { n, center, half, values: vec![0.0; n * n] }
     }
 
-    pub fn sample(field: &Field, center: Vec2, half: f64, n: usize) -> Grid {
+    pub fn sample(bath: &impl Bath, center: Vec2, half: f64, n: usize) -> Grid {
         let mut grid = Grid::zeros(center, half, n);
         for j in 0..n {
             for i in 0..n {
-                grid.values[j * n + i] = field.height(grid.world(i, j));
+                grid.values[j * n + i] = bath.height(grid.world(i, j));
             }
         }
         grid

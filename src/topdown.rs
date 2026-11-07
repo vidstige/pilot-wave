@@ -1,6 +1,6 @@
 //! Top-down view: grid values through a colormap, droplets on top.
 use crate::colormap::{sample, Colormap};
-use crate::field::Vec2;
+use crate::bath::Vec2;
 use crate::grid::Grid;
 use crate::image::{Color, Image};
 

@@ -1,13 +1,12 @@
-//! The bath's memory: past impacts with decaying weights. No I/O.
+//! An unbounded bath's memory: past impacts with decaying weights.
 //!
 //! Length unit is the Faraday wavelength, time unit is one bounce.
 //! Every bounce leaves a standing J0 wave that decays by
 //! exp(-1/memory) per bounce.
 use std::f64::consts::PI;
 
+use crate::bath::{distance, Bath, Vec2};
 use crate::bessel::{j0, j1_over_x};
-
-pub type Vec2 = [f64; 2];
 
 pub const WAVENUMBER: f64 = 2.0 * PI;
 /// Impacts older than this many memories are forgotten.
@@ -30,14 +29,16 @@ impl Field {
             decay: (-1.0 / memory).exp(),
         }
     }
+}
 
-    pub fn height(&self, p: Vec2) -> f64 {
+impl Bath for Field {
+    fn height(&self, p: Vec2) -> f64 {
         self.impacts.iter().zip(&self.weights)
             .map(|(q, w)| w * j0(WAVENUMBER * distance(p, *q)))
             .sum()
     }
 
-    pub fn slope(&self, p: Vec2) -> Vec2 {
+    fn slope(&self, p: Vec2) -> Vec2 {
         let mut g = [0.0; 2];
         for (q, w) in self.impacts.iter().zip(&self.weights) {
             let d = [p[0] - q[0], p[1] - q[1]];
@@ -50,8 +51,7 @@ impl Field {
         g
     }
 
-    /// Age every wave by one bounce and add this bounce's impacts.
-    pub fn remember(&mut self, impacts: &[Vec2]) {
+    fn remember(&mut self, impacts: &[Vec2]) {
         for w in &mut self.weights {
             *w *= self.decay;
         }
@@ -61,10 +61,6 @@ impl Field {
             self.next = (self.next + 1) % self.impacts.len();
         }
     }
-}
-
-pub fn distance(a: Vec2, b: Vec2) -> f64 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
 }
 
 #[cfg(test)]

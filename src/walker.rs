@@ -3,7 +3,7 @@
 //! A bouncer at rest sits on top of its own wave hill. Once
 //! WAVENUMBER² · FORCE · memory² > 2 · DRAG that hill is steep enough
 //! that the slightest noise grows into steady walking.
-use crate::field::{Field, Vec2};
+use crate::bath::{Bath, Vec2};
 use crate::rng::Rng;
 
 pub const FORCE: f64 = 6e-4;
@@ -23,13 +23,13 @@ impl Walkers {
 
 /// Advance every droplet by one bounce under an external force.
 pub fn step(
-    field: &mut Field,
+    bath: &mut impl Bath,
     walkers: &mut Walkers,
     external: impl Fn(Vec2) -> Vec2,
     rng: &mut Rng,
 ) {
     for (p, v) in walkers.positions.iter_mut().zip(&mut walkers.velocities) {
-        let g = field.slope(*p);
+        let g = bath.slope(*p);
         let e = external(*p);
         for k in 0..2 {
             v[k] = (1.0 - DRAG) * v[k] - FORCE * g[k] + e[k]
@@ -37,7 +37,7 @@ pub fn step(
             p[k] += v[k];
         }
     }
-    field.remember(&walkers.positions);
+    bath.remember(&walkers.positions);
 }
 
 pub fn free(_: Vec2) -> Vec2 {
@@ -51,7 +51,8 @@ pub fn spring(stiffness: f64) -> impl Fn(Vec2) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field::distance;
+    use crate::bath::distance;
+    use crate::field::Field;
     use std::f64::consts::TAU;
 
     fn run(memory: f64, w: &mut Walkers, bounces: usize) -> Vec<Vec<Vec2>> {
