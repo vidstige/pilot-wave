@@ -1,6 +1,7 @@
 //! Droplets as spheres resting on the bath.
-use super::{add, dot, fresnel, normalize, reflect, scale, sky, smoothstep, sub, Vec3};
-use super::{FILL, KEY, KEY_COLOR};
+use super::{add, dot, fresnel, mul, normalize, reflect, scale};
+use super::{sky, smoothstep, sub, Vec3};
+use super::{FILL, KEY, KEY_COLOR, LIQUID};
 use crate::bath::Vec2;
 
 /// In wavelengths, like the grid.
@@ -9,13 +10,13 @@ pub const RADIUS: f64 = 0.09;
 pub const SINK: f64 = 0.05;
 /// Depth and Gaussian width of the dimple under a droplet, in radii.
 const DIMPLE: (f64, f64) = (0.3, 0.8);
-/// Albedo of the dark body, and how much identity color it shows.
-const BODY: f64 = 0.03;
-const TINT: f64 = 0.5;
-/// Key light focused through the droplet onto its far side.
-const GLOW: f64 = 0.3;
-const FOCUS: f64 = 8.0;
-const GLOSS: f64 = 300.0;
+/// Refractive index of silicone oil.
+const IOR: f64 = 1.4;
+/// Fraction of light passing through, and how much identity color
+/// it picks up.
+const CLARITY: f64 = 0.15;
+const TINT: f64 = 0.75;
+const GLOSS: f64 = 120.0;
 /// Angular radius of the key light, as a tangent.
 const PENUMBRA: f64 = 0.25;
 
@@ -75,24 +76,43 @@ pub fn sunlight(droplets: &[Droplet], p: Vec3) -> f64 {
     droplets.iter().map(|x| shadow(x, p)).product()
 }
 
-/// What a droplet mirrors: the sky, and below the horizon the bath
-/// as a flat mirror of the sky.
+/// What a droplet mirrors: the sky, and below the horizon a flat lit
+/// bath mirroring the sky.
 fn environment(r: Vec3) -> Vec3 {
     let f = if r[2] < 0.0 { fresnel(-r[2]) } else { 1.0 };
-    scale(sky([r[0], r[1], r[2].abs()]), f)
+    let lit = normalize(KEY)[2] + FILL;
+    let mirror = scale(sky([r[0], r[1], r[2].abs()]), f);
+    add(mirror, scale(LIQUID, lit * (1.0 - f)))
 }
 
-/// A dark glassy droplet at normal n seen from v: a tinted body lit
-/// and back lit by the key, under a Fresnel mirror.
+/// Direction d bent into a surface with normal n facing it, for a
+/// ratio eta of refractive indices.
+fn refract(d: Vec3, n: Vec3, eta: f64) -> Vec3 {
+    let c = -dot(n, d);
+    let k = 1.0 - eta * eta * (1.0 - c * c);
+    add(scale(d, eta), scale(n, eta * c - k.sqrt()))
+}
+
+/// Direction a view ray from v leaves the droplet after entering at
+/// normal n. It exits where the chord meets the sphere again.
+fn through(n: Vec3, v: Vec3) -> Vec3 {
+    let d = refract(scale(v, -1.0), n, 1.0 / IOR);
+    let exit = sub(n, scale(d, 2.0 * dot(n, d)));
+    refract(d, scale(exit, -1.0), IOR)
+}
+
+/// The environment and the key as seen in direction r.
+fn light(r: Vec3, specular: f64) -> Vec3 {
+    let glint = dot(r, normalize(KEY)).max(0.0).powf(specular);
+    add(environment(r), scale(KEY_COLOR, glint))
+}
+
+/// A dark glassy droplet at normal n seen from v: the scene behind it
+/// refracted, upside down, through tinted oil, under a Fresnel mirror.
 fn shade(x: &Droplet, n: Vec3, v: Vec3) -> Vec3 {
-    let l = normalize(KEY);
-    let h = normalize(add(l, v));
-    let diffuse = dot(n, l).max(0.0) + FILL * (0.5 + 0.5 * n[2]);
-    let glow = (-dot(n, l)).max(0.0).powf(FOCUS);
     let tint = add(scale([1.0; 3], 1.0 - TINT), scale(x.tint, TINT));
-    let body = scale(tint, BODY * diffuse + GLOW * glow);
-    let specular = dot(n, h).max(0.0).powf(GLOSS);
-    let mirror = add(environment(reflect(n, v)), scale(KEY_COLOR, specular));
+    let body = scale(mul(tint, light(through(n, v), GLOSS)), CLARITY);
+    let mirror = light(reflect(n, v), GLOSS);
     let f = fresnel(dot(n, v));
     add(scale(body, 1.0 - f), scale(mirror, f))
 }
