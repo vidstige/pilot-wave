@@ -19,6 +19,10 @@ const STENCIL: [f32; 5] = [-1.0 / 12.0, 4.0 / 3.0, -5.0 / 2.0, 4.0 / 3.0, -1.0 /
 /// Sponge depth at each edge, in cells, and its strength.
 const SPONGE: usize = 24;
 const SPONGE_RATE: f32 = 40.0;
+/// Work per thread below which another thread costs more to spawn
+/// than it saves: on an M1 a 512² step takes 0.125 ms on 4 threads
+/// and 0.165 ms on 8.
+const CELLS_PER_THREAD: usize = 1 << 16;
 /// Bands per thread, so a fast core can take over bands from a slow
 /// one: 0.45 ms for a 1024² step on an M1 (4 fast and 4 slow cores)
 /// against 0.48 ms with one band per thread.
@@ -260,7 +264,8 @@ impl Wave {
             potential: &self.potential,
             keep: &self.keep,
         };
-        let threads = thread::available_parallelism().map_or(1, |t| t.get());
+        let cores = thread::available_parallelism().map_or(1, |t| t.get());
+        let threads = (n * n / CELLS_PER_THREAD).clamp(1, cores);
         let band = n.div_ceil(threads * BANDS_PER_THREAD);
         let starts = (0..n).step_by(band);
         let halos: Vec<_> = starts
