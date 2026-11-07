@@ -78,10 +78,17 @@ built into the waves themselves. The droplet bounces off the rim.
 
 `topdown.rs` paints the field through matplotlib's coolwarm colormap
 with droplets and trails on top. `oblique.rs` renders the field as a
-lit liquid surface: one ray per pixel is marched to the heightfield,
-shaded with a key light, a soft fill and a Fresnel reflection of a
-gradient sky, with the droplets as small spheres. Colormaps are
-tables sampled from matplotlib by `tools/colormaps.py`.
+lit liquid surface: rays are marched to the heightfield and shaded
+with a key light, a soft fill and a Fresnel reflection of a gradient
+sky. The droplets (`oblique/droplet.rs`) are beads of silicone oil
+resting on the bath: light refracts through them, so they show the
+scene behind them upside down, dark on top with the bright horizon
+at the bottom; they reflect in the surface beneath them, sink into a
+small dimple, darken the contact zone and cast a soft shadow. Stills
+use four rays per pixel, the live view one. Colormaps are tables
+sampled from matplotlib by `tools/colormaps.py`.
+
+![The corral seen obliquely](images/corral_oblique.png)
 
 ## What to look for
 
