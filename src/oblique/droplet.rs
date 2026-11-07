@@ -35,11 +35,11 @@ fn sphere(o: Vec3, d: Vec3, c: Vec3) -> Option<f64> {
     let oc = sub(o, c);
     let b = dot(oc, d);
     let disc = b * b - dot(oc, oc) + RADIUS * RADIUS;
-    (disc > 0.0).then(|| -b - disc.sqrt())
+    (disc > 0.0).then(|| -b - disc.sqrt()).filter(|&t| t > 0.0)
 }
 
 /// The nearest droplet along a ray, and the distance to it.
-pub fn hit(droplets: &[Droplet], o: Vec3, d: Vec3) -> Option<(f64, &Droplet)> {
+fn hit(droplets: &[Droplet], o: Vec3, d: Vec3) -> Option<(f64, &Droplet)> {
     droplets.iter()
         .filter_map(|x| Some((sphere(o, d, x.center)?, x)))
         .min_by(|a, b| a.0.total_cmp(&b.0))
@@ -54,7 +54,7 @@ fn environment(r: Vec3) -> Vec3 {
 
 /// A dark glassy droplet at normal n seen from v: a tinted body lit
 /// and back lit by the key, under a Fresnel mirror.
-pub fn shade(x: &Droplet, n: Vec3, v: Vec3) -> Vec3 {
+fn shade(x: &Droplet, n: Vec3, v: Vec3) -> Vec3 {
     let l = normalize(KEY);
     let h = normalize(add(l, v));
     let diffuse = dot(n, l).max(0.0) + FILL * (0.5 + 0.5 * n[2]);
@@ -65,4 +65,11 @@ pub fn shade(x: &Droplet, n: Vec3, v: Vec3) -> Vec3 {
     let mirror = add(environment(reflect(n, v)), scale(KEY_COLOR, specular));
     let f = fresnel(dot(n, v));
     add(scale(body, 1.0 - f), scale(mirror, f))
+}
+
+/// Distance to and color of the nearest droplet along a ray.
+pub fn trace(droplets: &[Droplet], o: Vec3, d: Vec3) -> Option<(f64, Vec3)> {
+    let (t, x) = hit(droplets, o, d)?;
+    let n = scale(sub(add(o, scale(d, t)), x.center), 1.0 / RADIUS);
+    Some((t, shade(x, n, scale(d, -1.0))))
 }

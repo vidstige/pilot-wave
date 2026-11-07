@@ -124,14 +124,19 @@ fn sky(r: Vec3) -> Vec3 {
     add(scale(HORIZON, 1.0 - t), scale(ZENITH, t))
 }
 
-/// Lambert and Blinn-Phong from the key light, sky reflection by Fresnel.
-fn surface(n: Vec3, v: Vec3) -> Vec3 {
+/// The bath at p with normal n seen from v: Lambert and Blinn-Phong
+/// from the key light, the sky and droplets mirrored by Fresnel.
+fn surface(scene: &Scene, p: Vec3, n: Vec3, v: Vec3) -> Vec3 {
     let l = normalize(KEY);
     let h = normalize(add(l, v));
     let diffuse = dot(n, l).max(0.0) + FILL * (0.5 + 0.5 * n[2]);
     let specular = dot(n, h).max(0.0).powf(SHININESS);
     let f = fresnel(dot(n, v));
-    let mirror = add(sky(reflect(n, v)), scale(KEY_COLOR, specular));
+    let r = reflect(n, v);
+    let mirror = match droplet::trace(&scene.droplets, p, r) {
+        Some((_, c)) => c,
+        None => add(sky(r), scale(KEY_COLOR, specular)),
+    };
     add(scale(LIQUID, diffuse * (1.0 - f)), scale(mirror, f))
 }
 
@@ -152,17 +157,13 @@ fn subpixel(k: usize, n: usize) -> (f64, f64) {
 }
 
 fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
-    let v = scale(d, -1.0);
     let t = march(scene, o, d);
-    match droplet::hit(&scene.droplets, o, d) {
-        Some((s, x)) if s < t => {
-            let p = add(o, scale(d, s));
-            let n = scale(sub(p, x.center), 1.0 / droplet::RADIUS);
-            droplet::shade(x, n, v)
-        }
+    match droplet::trace(&scene.droplets, o, d) {
+        Some((s, c)) if s < t => c,
         _ => {
-            let p = [o[0] + t * d[0], o[1] + t * d[1]];
-            surface(normal(scene, p), v)
+            let p = add(o, scale(d, t));
+            let n = normal(scene, [p[0], p[1]]);
+            surface(scene, p, n, scale(d, -1.0))
         }
     }
 }
@@ -252,7 +253,10 @@ mod tests {
         let grid = bump(1.0);
         let scene = scene(&grid, &[]);
         let up = [0.0, 0.0, 1.0];
-        let lit = |x| surface(normal(&scene, [x, 0.0]), up);
+        let lit = |x| {
+            let p = [x, 0.0, elevation(&scene, [x, 0.0])];
+            surface(&scene, p, normal(&scene, [x, 0.0]), up)
+        };
         assert!(lit(-0.2).iter().sum::<f64>() > lit(0.2).iter().sum());
     }
 
@@ -272,6 +276,17 @@ mod tests {
         let bottom = scene.droplets[0].center[2] - droplet::RADIUS;
         assert!(under < elevation(&scene, [0.5, 0.0]));
         assert!(bottom < under && under - bottom < 0.1 * droplet::RADIUS);
+    }
+
+    #[test]
+    fn bath_in_front_of_a_droplet_mirrors_its_tint() {
+        let grid = Grid::zeros([0.0; 2], 1.0, 40);
+        let mut scene = scene(&grid, &[[0.0; 2]]);
+        let p = [0.0, -2.0 * droplet::RADIUS, 0.0];
+        let (up, v) = ([0.0, 0.0, 1.0], [0.0, -TILT.sin(), TILT.cos()]);
+        let white = surface(&scene, p, up, v);
+        scene.droplets[0].tint = [1.0, 0.0, 0.0];
+        assert_ne!(white, surface(&scene, p, up, v));
     }
 
     #[test]
