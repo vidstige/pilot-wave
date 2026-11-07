@@ -3,6 +3,13 @@
 use crate::grid::Vec2;
 use crate::wave::Wave;
 
+/// Longest move in one substep, in cells, and the most substeps a
+/// step may take. Next to a node of ψ the guiding velocity is huge,
+/// so the particle creeps up to it and turns back as it should,
+/// instead of jumping across.
+const SUBSTEP: f64 = 0.25;
+const MAX_SUBSTEPS: usize = 64;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Kind {
     Quantum,
@@ -22,14 +29,26 @@ impl Particles {
         Particles { kind, positions, velocities }
     }
 
-    /// Midpoint step along the guiding velocity field.
+    /// Midpoint steps along the guiding velocity field, shortened
+    /// wherever the field moves the particle more than a fraction of a
+    /// cell.
     fn guide(&mut self, wave: &Wave, dt: f64) {
+        let reach = SUBSTEP * wave.dx;
         for p in &mut self.positions {
-            let v = wave.velocity(*p);
-            let mid = [p[0] + 0.5 * dt * v[0], p[1] + 0.5 * dt * v[1]];
-            let v = wave.velocity(mid);
-            p[0] += dt * v[0];
-            p[1] += dt * v[1];
+            let mut left = dt;
+            for substep in 0..MAX_SUBSTEPS {
+                let v = wave.velocity(*p);
+                let speed = v[0].hypot(v[1]).max(f64::MIN_POSITIVE);
+                let h = if substep + 1 == MAX_SUBSTEPS { left } else { left.min(reach / speed) };
+                let mid = [p[0] + 0.5 * h * v[0], p[1] + 0.5 * h * v[1]];
+                let v = wave.velocity(mid);
+                p[0] += h * v[0];
+                p[1] += h * v[1];
+                left -= h;
+                if left <= 0.0 {
+                    break;
+                }
+            }
         }
     }
 
