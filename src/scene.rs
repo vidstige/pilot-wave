@@ -15,14 +15,20 @@ const CORRAL_RADIUS: f64 = 2.0;
 /// nudge that sets it turning.
 const TRIMER_RADIUS: f64 = 0.42;
 const NUDGE: f64 = 0.02;
+/// Spacing and shells of the hexagonal patch of bouncers.
+const LATTICE_SPACING: f64 = 0.61;
+const LATTICE_SHELLS: i32 = 2;
 
-pub const SCENES: [&str; 5] = ["single", "pair", "trimer", "trap", "corral"];
+pub const SCENES: [&str; 6] =
+    ["single", "pair", "trimer", "lattice", "trap", "corral"];
 
 /// The memory at which each scene shows its phenomenon best: pairs
-/// orbit only at low memory, the corral's rings need very long memory.
+/// orbit only at low memory, a lattice needs bouncers below the walking
+/// threshold, the corral's rings need very long memory.
 pub fn default_memory(name: &str) -> f64 {
     match name {
         "pair" | "trimer" => 8.0,
+        "lattice" => 3.0,
         "corral" => 400.0,
         _ => 20.0,
     }
@@ -51,6 +57,21 @@ fn ring(n: usize, radius: f64) -> Walkers {
     Walkers::new(positions, velocities)
 }
 
+/// Bouncers at rest on a hexagonal patch.
+fn lattice() -> Walkers {
+    let s = LATTICE_SHELLS;
+    let positions: Vec<Vec2> = (-s..=s)
+        .flat_map(|j| (-s..=s).map(move |i| (i, j)))
+        .map(|(i, j)| {
+            let x = i as f64 + 0.5 * j as f64;
+            [LATTICE_SPACING * x, LATTICE_SPACING * j as f64 * 0.75f64.sqrt()]
+        })
+        .filter(|p| p[0].hypot(p[1]) <= LATTICE_SPACING * s as f64 + 1e-9)
+        .collect();
+    let velocities = vec![[0.0; 2]; positions.len()];
+    Walkers::new(positions, velocities)
+}
+
 pub fn scene(name: &str, memory: f64) -> Scene {
     let free = |walkers: Walkers, half: f64| Scene {
         bath: Box::new(Open::new(memory, walkers.positions.len())),
@@ -64,6 +85,7 @@ pub fn scene(name: &str, memory: f64) -> Scene {
         "single" => free(Walkers::new(vec![[0.0; 2]], vec![[0.0; 2]]), 3.0),
         "pair" => free(ring(2, 0.35), 2.5),
         "trimer" => free(ring(3, TRIMER_RADIUS), 2.5),
+        "lattice" => Scene { follow: false, ..free(lattice(), 2.0) },
         "trap" => Scene {
             follow: false,
             spring: SPRING,
