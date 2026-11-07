@@ -18,15 +18,20 @@ const DX: f64 = 0.1;
 /// Where the packet starts and where arrivals are counted.
 const START: f64 = -20.0;
 const SCREEN: f64 = 30.0;
+/// Extra distance run after the packet centre reaches the screen.
+const TAIL: f64 = 25.0;
 /// Walls at y = 0 with this thickness.
 const WALL: f64 = 0.4;
 pub const SLIT_WIDTH: f64 = 1.0;
 pub const SLIT_SEPARATION: f64 = 4.0;
 pub const SINGLE_SLIT_WIDTH: f64 = 2.0;
 /// Barrier height relative to the packet's energy, and its width.
+/// The width is a whole number of cells, so the grid holds exactly it.
 pub const BARRIER_HEIGHT: f64 = 1.2;
-pub const BARRIER_WIDTH: f64 = 0.3;
-pub const DISC_RADIUS: f64 = 2.0;
+pub const BARRIER_WIDTH: f64 = 0.4;
+pub const DISC_RADIUS: f64 = 4.0;
+/// Width of the beam around the disc.
+pub const DISC_BEAM: f64 = 8.0;
 /// Trap frequency and the orbit radius of the coherent state.
 pub const TRAP: f64 = 0.5;
 const ORBIT: f64 = 4.0;
@@ -76,9 +81,10 @@ fn slits(centers: &[f64], width: f64) -> impl Fn(Vec2) -> bool + '_ {
     move |p| in_wall(p) && !centers.iter().any(|c| (p[0] - c).abs() < width / 2.0)
 }
 
-/// How far the packet travels to the screen and back off the walls.
+/// How far the packet travels past the screen, so that the slow and
+/// wide-angle tail of the wave crosses it too.
 fn travel(wave: &Wave) -> f64 {
-    (SCREEN - START + 10.0).min(wave.extent()) / SPEED
+    (SCREEN - START + TAIL).min(wave.extent()) / SPEED
 }
 
 pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
@@ -102,7 +108,7 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
         }
         "disc" => {
             wall(&mut wave, |p| p[0].hypot(p[1]) < DISC_RADIUS);
-            (upward([0.0, START], [3.0, 2.0]), 0.0, Some(SCREEN))
+            (upward([0.0, START], [DISC_BEAM, 2.0]), 0.0, Some(SCREEN))
         }
         "harmonic" => {
             potential(&mut wave, |p| 0.5 * TRAP * TRAP * (p[0] * p[0] + p[1] * p[1]));
