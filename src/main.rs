@@ -5,13 +5,15 @@ use pilot_wave::scene::{scene, Simulation};
 use pilot_wave::{colormap, frame, png, topdown};
 
 const PIXELS: usize = 600;
+/// Rays per pixel in the oblique view.
+const STILL_SAMPLES: usize = 4;
 const HISTOGRAM_BINS: usize = 100;
 const HISTOGRAM_SKIP: usize = 5000;
 
 fn write_frame(sim: &Simulation, view: &str, path: &str) {
     let image = match view {
         "top" => frame::top(sim, PIXELS),
-        "oblique" => frame::oblique(sim, PIXELS, PIXELS),
+        "oblique" => frame::oblique(sim, PIXELS, PIXELS, STILL_SAMPLES),
         other => panic!("unknown view {other}"),
     };
     png::write(path, &image).expect("write frame");

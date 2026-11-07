@@ -19,10 +19,11 @@ pub fn top(sim: &Simulation, n: usize) -> Image {
     image
 }
 
-/// Oblique view of the bath sampled on n by n cells.
-pub fn oblique(sim: &Simulation, n: usize, pixels: usize) -> Image {
+/// Oblique view of the bath sampled on n by n cells, with the given
+/// rays per pixel.
+pub fn oblique(sim: &Simulation, n: usize, pixels: usize, samples: usize) -> Image {
     let droplets = &sim.scene.walkers.positions;
-    crate::oblique::render(&grid(sim, n), droplets, pixels, pixels)
+    crate::oblique::render(&grid(sim, n), droplets, pixels, pixels, samples)
 }
 
 #[cfg(test)]
@@ -48,7 +49,7 @@ mod tests {
 
     #[test]
     fn oblique_size_follows_pixels_not_samples() {
-        let image = oblique(&walked("pair", 50), 20, 48);
+        let image = oblique(&walked("pair", 50), 20, 48, 1);
         assert_eq!((image.width, image.height), (48, 48));
     }
 }

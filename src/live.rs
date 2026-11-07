@@ -10,6 +10,8 @@ const TOP_SAMPLES: usize = 180;
 /// than it draws.
 const OBLIQUE_SAMPLES: usize = 120;
 const OBLIQUE_PIXELS: usize = 360;
+/// One ray per pixel keeps the live oblique view fluid.
+const OBLIQUE_SAMPLES_PER_PIXEL: usize = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum View {
@@ -49,7 +51,8 @@ impl Live {
         match view {
             View::Top => frame::top(sim, TOP_SAMPLES),
             View::Oblique => {
-                frame::oblique(sim, OBLIQUE_SAMPLES, OBLIQUE_PIXELS)
+                frame::oblique(
+                    sim, OBLIQUE_SAMPLES, OBLIQUE_PIXELS, OBLIQUE_SAMPLES_PER_PIXEL)
             }
         }
     }
