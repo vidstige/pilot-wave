@@ -1,4 +1,4 @@
-# pilot-wave
+# Python prototype
 
 A minimal simulation of walking droplets (pilot-wave hydrodynamics),
 built on NumPy and matplotlib. It is a stroboscopic path-memory model:
@@ -12,6 +12,7 @@ qualitative quantum-like behaviour is.
 ## Running it
 
 ```
+cd prototype
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python single.py 20       # one droplet, memory 20
