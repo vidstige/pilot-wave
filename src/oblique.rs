@@ -27,6 +27,8 @@ const LIQUID: Vec3 = [0.02, 0.07, 0.12];
 const ZENITH: Vec3 = [0.02, 0.03, 0.07];
 const HORIZON: Vec3 = [1.3, 1.05, 0.8];
 const SHININESS: f64 = 60.0;
+/// How far from the bath droplets mirror in it, in droplet radii.
+const REACH: f64 = 4.0;
 const EXPOSURE: f64 = 1.5;
 const GOLDEN: f64 = 0.618_033_988_749_895;
 
@@ -140,8 +142,12 @@ fn surface(scene: &Scene, p: Vec3, n: Vec3, v: Vec3) -> Vec3 {
     let specular = sun * dot(n, h).max(0.0).powf(SHININESS);
     let f = fresnel(dot(n, v));
     let r = reflect(n, v);
+    // Only the double right under a droplet: the exaggerated waves
+    // would also mirror it in troughs far away.
+    let double = droplet::trace(&scene.droplets, p, r)
+        .filter(|&(t, _)| t < REACH * droplet::RADIUS);
     // Darkening the mirrored sky too gives the soft contact shadow.
-    let mirror = match droplet::trace(&scene.droplets, p, r) {
+    let mirror = match double {
         Some((_, c)) => c,
         None => add(scale(sky(r), open), scale(KEY_COLOR, specular)),
     };
