@@ -74,14 +74,14 @@ def screen(run: str, name: str) -> dict[str, np.ndarray]:
     return {key: table[key] for key in table.dtype.names}
 
 
-def screen_plot(ax, name: str, theory: str, classical: bool, reach: float):
+def screen_plot(ax, name: str, run: str, theory: str, reach: float):
+    """Arrivals of one run against the quantum current and the theory."""
     quantum = screen(name, name)
     x = quantum["x"]
-    ax.fill_between(x, quantum["hits"], step="mid", color=HITS, alpha=0.6, lw=0,
-                    label="quantum arrivals")
-    if classical:
-        hits = screen(f"{name}-classical", name)["hits"]
-        ax.step(x, hits, where="mid", color=CLASSICAL, lw=1.5, label="classical arrivals")
+    kind = "classical" if run.endswith("classical") else "quantum"
+    ax.fill_between(x, screen(run, name)["hits"], step="mid", lw=0, alpha=0.6,
+                    color=CLASSICAL if kind == "classical" else HITS,
+                    label=f"{kind} arrivals")
     ax.plot(x, quantum["flux"], color=FLUX, lw=2, label="probability current")
     ax.plot(x, quantum["theory"], color=THEORY, lw=1.5, ls="--", label=theory)
     ax.set_xlim(-reach, reach)
@@ -94,12 +94,15 @@ def screen_plot(ax, name: str, theory: str, classical: bool, reach: float):
 
 
 def comparison(name: str, theory: str, box: Box, reach: float) -> plt.Figure:
-    figure = plt.figure(figsize=(10, 9))
-    grid = figure.add_gridspec(2, 2, height_ratios=[1.15, 1])
-    for column, (run, title) in enumerate([(name, "quantum"), (f"{name}-classical", "classical")]):
+    figure = plt.figure(figsize=(10, 12))
+    grid = figure.add_gridspec(3, 2, height_ratios=[1.3, 1, 1])
+    runs = [name, f"{name}-classical"]
+    for column, run in enumerate(runs):
+        title = run.replace(name, "quantum").replace("quantum-", "")
         show(figure.add_subplot(grid[0, column]), f"{OUT}/{run}/{name}_trajectories.png",
              LARGE, box, f"{title} trails over the time-integrated density")
-    screen_plot(figure.add_subplot(grid[1, :]), name, theory, True, reach)
+    for row, run in enumerate(runs, 1):
+        screen_plot(figure.add_subplot(grid[row, :]), name, run, theory, reach)
     figure.tight_layout()
     return figure
 
@@ -108,7 +111,7 @@ def single_slit() -> plt.Figure:
     figure, (left, right) = plt.subplots(1, 2, figsize=(12, 5), width_ratios=[1, 1.4])
     show(left, f"{OUT}/single-slit/single-slit_trajectories.png", LARGE, (-25, 25, -10, 40),
          "trails over the time-integrated density")
-    screen_plot(right, "single-slit", "Fraunhofer", False, 40)
+    screen_plot(right, "single-slit", "single-slit", "Fraunhofer", 40)
     zero = SCREEN * np.tan(np.arcsin(1 / SINGLE_SLIT_WIDTH))
     for x in (-zero, zero):
         right.axvline(x, color=MUTED, lw=0.8, ls=":")
