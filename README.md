@@ -62,20 +62,17 @@ sinc² envelope, times cos²θ for a cylindrical wave meeting a flat
 screen; with d/a = 4 there are orders at sin θ = m/4, at x = 0, ±7.7,
 ±17.2 and ±33.8.
 
-With 60000 particles, 7130 (0.1188) reach the screen against 0.1199 of
+With 60000 particles, 7066 (0.1178) reach the screen against 0.1195 of
 the probability, and the rest reflect. The current follows the
 Fraunhofer curve to 2.8% of the peak, rms, with its maxima at 0, ±7.6,
 ±16.4 and ±30.8 where the curve's are (the envelope pulls them in from
 the grating angles). Summed over each order the current is within 10%
 of the curve's in orders 0 to 2 and 28% above it in the faint third.
-The arrivals match the current in the first order to 3% and fall 12%
-and 20% short in the second and third; the central fringe gets 22% too
-many, all of them in the one bin just right of the axis. Those
-particles started in front of the wall, within a tenth of a wavelength
-of the right slit's inner edge, slid into the slit along the wall and
-then hugged the axis; that is the wall problem below. Of 20000
-classical particles, 2545 (0.127, the beam's share over the two slits
-is 0.126) arrive, every one within |x| < 3.
+The arrivals match the current to 1.5% in every order up to the
+second and to 7% in the faint third, 2.1% of the peak rms over the
+whole screen; no single bin is off by more than 6%. Of 20000 classical
+particles, 2545 (0.127, the beam's share over the two slits is 0.126)
+arrive, every one within |x| < 3.
 
 The figure at the top shows the quantum trails over the time-integrated
 density, the classical trails, and the screens. The quantum arrivals
@@ -107,14 +104,12 @@ dotted in the figure, and side lobes near x = ±30.
 
 ![Single slit: trails and the screen](images/single-slit.png)
 
-With 40000 particles, 5029 (0.1257) reach the screen against 0.1277
+With 40000 particles, 5097 (0.1274) reach the screen against 0.1271
 of the probability. The current follows the Fraunhofer curve to 1.8% of
 the peak, rms over the screen, with its minimum at x = 18.0 against
 17.2 (one bin of 0.8) where it falls to 0.7% of the peak, and side
 lobes within 4% of the curve's. The arrivals match the central lobe to
-2%, but the side lobes get 239 particles where the current predicts
-312: the particles that end there pass closest to the slit's edges,
-where the wall problem below most likely costs some of them.
+0.3% and the side lobes to 4%.
 
 ### Barrier
 
@@ -129,27 +124,24 @@ easily.
 ![Barrier: the packet splits; the front of it gets through](images/barrier.png)
 
 The analytic transmission is 0.2268 at k = 2π and 0.2301 averaged
-over the packet. The field agrees: 0.2210 of the probability crosses
-the screen, 4% below the average. The particles do not: 1554 of 4000,
-0.389, get through. This is a numerical failure of the guidance, not of
-the theory. In front of the barrier the incident and reflected waves
-(|r| = 0.88) make a standing wave whose near-nodes are about 0.02 wide,
-a fifth of a cell, where the true velocity reaches about 100; the
-phase-difference velocity saturates at π/(2dx) = 16 and smears the
-jump over the neighbouring cells, so particles cross the standing wave
-too fast. In a separate run of the barrier alone, halving the cells
-brings the particles from 0.379 to 0.263 against the field's 0.228;
-taking the velocity as j/ρ instead undershoots, 0.142 and 0.205.
+over the packet. The field agrees: 0.2199 of the probability crosses
+the screen, 4% below the average, the grid's slightly heavier
+effective mass along the motion accounting for most of the gap. The
+particles agree with the field: 873 of 4000, 0.2182, get through.
 
 The figure shows the packet splitting and, on the right, where the
 transmitted particles started. In one dimension Bohmian trajectories
 cannot cross, and this barrier is uniform in x, so the particles that
 get through are exactly the ones that started at the front of the
 packet. Which particle tunnels is decided by where it starts, not by
-any chance at the barrier. That order survives the faulty velocities:
-every transmitted particle started at y ≥ −19.399 and every reflected
-one at y ≤ −19.402, the front 39% of the packet. With the right
-guidance the split would sit at −18.46, the front 22%.
+any chance at the barrier: every transmitted particle started at
+y ≥ −18.432 and every reflected one at y ≤ −18.435, and the field's
+transmission puts the split at −18.46. Getting this right needed the
+velocity estimate described under Numerics: in front of the barrier
+the incident and reflected waves (|r| = 0.88) make a standing wave
+whose near-nodes are a fifth of a cell wide, and a velocity
+interpolated between cells let particles cross them, 0.389 of them
+getting through.
 
 ### Disc
 
@@ -172,13 +164,13 @@ shadow |x| < 4 where the field puts 4.0%, which is about what to expect
 of Kirchhoff's boundary conditions on an obstacle only eight
 wavelengths across.
 
-Quantum particles fill the shadow as the current does: 13282 of 20000
-(0.664) reach the screen against 0.659 of the probability, and 4.1% of
-the arrivals land inside |x| < 4. But almost none land on the bright
-line: 10 in the four bins around the axis, where the current puts 105.
-That is the wall problem below. The classical particles cast a sharp
-shadow: 12222 (0.611; the Gaussian beam has 0.617 outside |x| < 4)
-reach the screen, none inside |x| < 4.
+Quantum particles fill the shadow as the current does: 13095 of 20000
+(0.6548) reach the screen against 0.6559 of the probability, 3.9% of
+the arrivals land inside |x| < 4 against 4.0% of the current, and the
+four bins around the axis get 86% of the particles the current puts
+there. The classical particles cast a sharp shadow: 12222 (0.611; the
+Gaussian beam has 0.617 outside |x| < 4) reach the screen, none inside
+|x| < 4.
 
 ### Harmonic trap and ground state
 
@@ -218,10 +210,8 @@ parallel to them.
 
 ![Packet in a box](images/box.png)
 
-The norm ends at 0.9990 after t = 6 with nothing absorbing it. But
-1.7% of the particles end in or beside a wall, where only 0.43% of the
-probability is, and most of those are inside the wall itself. That is
-the wall problem described below.
+The norm ends at 0.9990 after t = 6 with nothing absorbing it. 0.8%
+of the particles end beside a wall, where 0.43% of the probability is.
 
 A free packet 1.5 wide crosses the domain and spreads as
 σ(t) = σ₀√(1 + (t/2σ₀²)²); each Bohmian particle keeps its place in the
@@ -236,30 +226,36 @@ k·dx = 0.63 the fourth-order Laplacian's dispersion has curvature
 0.976 instead of 1, an effective mass 2.5% heavier along the motion,
 which predicts 2.4613.
 
-### Known problems
+### Numerics
 
-Two faults in the guidance velocity, both in `src/wave.rs`, show in
-these runs.
+The guiding velocity is the probability current over the density,
+each interpolated between the four surrounding cells before dividing,
+with fourth order differences for the gradient so a plane wave at ten
+cells per wavelength comes out within 0.3%. Interpolating a velocity
+computed per cell instead, or the phase difference between
+neighbouring cells, smooths over the near-nodes of standing waves,
+where the density dips to nearly zero within a fraction of a cell and
+the velocity must soar to turn the particle back; particles then cross
+them, and the barrier's particle transmission came out 0.389 against
+the field's 0.220. Particles move in substeps of at most a quarter
+cell for the same reason. Where the wave meets a wall ψ is zero and so
+is the velocity. What remains is the grid's dispersion: at k·dx = 0.63
+the Laplacian's curvature is 0.976 instead of 1, an effective mass
+2.5% heavier along the motion, which the free packet and the barrier
+both show. Halving the cells would quarter that.
 
-Walls hand out spurious velocities. Wall cells hold signed zeros (the
-step multiplies them by 0), and the phase difference across a wall's
-edge is an `atan2` of products with those zeros. When the second
-argument sums to −0 the `atan2` returns ±π instead of 0: a velocity of
-±π/(2dx) = 16 normal to the wall, in up to a quarter of the cells along
-a wall at any moment. Particles within half a cell of a wall get
-pushed into it and freeze there, or slide along it; the trails show
-them as streaks on the walls' faces. In the box 1.6% of the particles
-end inside the walls; on the disc 2% of them stick, and the bright
-line on its axis, which is fed by the wave that skims the disc, gets
-almost none of its particles. Adding `+ 0.0` to the `atan2`'s second
-argument turns −0 into +0; with that change, tried outside the solver,
-no particle enters the box's walls.
+## Live viewer
 
-Near-nodes are too narrow for the grid. Where a wave meets its own
-reflection the density dips to nearly zero over a fraction of a cell
-and the true velocity spikes; the phase difference over two cells
-smears the spike, so particles cross standing waves too fast. The
-barrier shows it worst (above). The slits and the disc reflect most of
-their wave too, but there the transmitted particles come from the
-middle of the beam, and the total arrivals still match the current to
-within 2%.
+```
+cargo run --release --bin live
+```
+
+The side panel picks the experiment, the particle count, quantum or
+classical particles, the grid size (256, 512 or 1024), the replay
+speed in time units per second, and the view: phase (hue) with
+density (brightness), density alone, or the density as a lit surface.
+Under the field, experiments with a screen plot the arrivals, the
+integrated current and the theory as they build up. `live --screenshot
+images/live.png` runs for two seconds, saves the window and quits.
+
+![The live viewer](images/live.png)
