@@ -1,6 +1,7 @@
 //! Oblique view: the grid as a lit liquid surface, droplets as spheres.
 mod droplet;
 
+use std::sync::Mutex;
 use std::thread;
 
 use crate::bath::Vec2;
@@ -218,8 +219,7 @@ pub fn render(
         let sy = (0.5 * height as f64 - y) * s;
         normalize(add(forward, add([sx, 0.0, 0.0], scale(up, sy))))
     };
-    let pixel = |i: usize| {
-        let (x, y) = ((i % width) as f64, (i / width) as f64);
+    let pixel = |x: f64, y: f64| {
         let c = (0..samples)
             .map(|i| subpixel(i, samples))
             .map(|(dx, dy)| trace(&scene, eye, ray(x + dx, y + dy)))
@@ -227,14 +227,16 @@ pub fn render(
         srgb(scale(c, 1.0 / samples as f64))
     };
     let mut pixels = vec![[0; 3]; width * height];
+    let rows = Mutex::new(pixels.chunks_mut(width).enumerate());
     let threads = thread::available_parallelism().map_or(1, |n| n.get());
-    let band = height.div_ceil(threads) * width;
+    // Rows on demand, as the cores differ in speed and rows in cost.
     thread::scope(|s| {
-        for (b, chunk) in pixels.chunks_mut(band).enumerate() {
-            let pixel = &pixel;
-            s.spawn(move || {
-                for (i, c) in chunk.iter_mut().enumerate() {
-                    *c = pixel(b * band + i);
+        for _ in 0..threads {
+            s.spawn(|| loop {
+                // A while let would hold the lock through the row.
+                let Some((y, row)) = rows.lock().unwrap().next() else { break };
+                for (x, c) in row.iter_mut().enumerate() {
+                    *c = pixel(x as f64, y as f64);
                 }
             });
         }
