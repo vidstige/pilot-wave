@@ -208,6 +208,67 @@ mod tests {
         [sum[0] / total, sum[1] / total]
     }
 
+    /// H f cell by cell, zero on the outer two cells at each edge.
+    fn plain_hamiltonian(wave: &Wave, f: &[f32]) -> Vec<f32> {
+        let n = wave.n;
+        let inv = 1.0 / (wave.dx * wave.dx) as f32;
+        let cell = |k: usize| {
+            let (i, j) = (k % n, k / n);
+            if i < 2 || j < 2 || i >= n - 2 || j >= n - 2 {
+                return 0.0;
+            }
+            let lap: f32 = (0..5)
+                .map(|o| STENCIL[o] * (f[k + o - 2] + f[k + o * n - 2 * n]))
+                .sum();
+            -0.5 * lap * inv + wave.potential[k] * f[k]
+        };
+        (0..n * n).map(cell).collect()
+    }
+
+    /// The scheme written out plainly, one component at a time.
+    fn plain_step(wave: &mut Wave, dt: f64) {
+        let dt = dt as f32;
+        let h = plain_hamiltonian(wave, &wave.im);
+        for k in 0..h.len() {
+            wave.re[k] = (wave.re[k] + dt * h[k]) * wave.keep[k];
+        }
+        let h = plain_hamiltonian(wave, &wave.re);
+        for k in 0..h.len() {
+            wave.im[k] = (wave.im[k] - dt * h[k]) * wave.keep[k];
+        }
+    }
+
+    /// A packet heading for a potential bump and a wall, with a
+    /// sponge, on a grid that splits unevenly among the cores.
+    fn obstacle_course() -> Wave {
+        let mut wave = Wave::new(101, DX);
+        packet().write(&mut wave);
+        wave.absorb_edges(stable_dt(DX, 10.0));
+        for j in 30..70 {
+            for i in 55..60 {
+                let k = wave.index((i, j));
+                wave.potential[k] = 10.0;
+                wave.keep[k + 10] = 0.0;
+            }
+        }
+        wave
+    }
+
+    #[test]
+    fn steps_match_the_plain_scheme() {
+        let (mut wave, mut plain) = (obstacle_course(), obstacle_course());
+        let dt = stable_dt(DX, 10.0);
+        for _ in 0..50 {
+            wave.step(dt);
+            plain_step(&mut plain, dt);
+        }
+        let parts = [(&wave.re, &plain.re), (&wave.im, &plain.im)];
+        for (a, b) in parts {
+            let worst = a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max);
+            assert!(worst < 1e-5, "{worst}");
+        }
+    }
+
     #[test]
     fn packet_starts_normalised_and_keeps_its_norm() {
         let mut wave = free_wave();
