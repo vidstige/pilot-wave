@@ -1,4 +1,7 @@
 //! A scalar field sampled on a square grid of cells around a center.
+use std::sync::Mutex;
+use std::thread;
+
 use crate::bath::{Bath, Vec2};
 
 pub struct Grid {
@@ -13,13 +16,24 @@ impl Grid {
         Grid { n, center, half, values: vec![0.0; n * n] }
     }
 
+    /// Bath heights at every cell, rows handed out to all cores.
     pub fn sample(bath: &(impl Bath + ?Sized), center: Vec2, half: f64, n: usize) -> Grid {
-        let mut grid = Grid::zeros(center, half, n);
-        for j in 0..n {
-            for i in 0..n {
-                grid.values[j * n + i] = bath.height(grid.world(i, j));
+        let mut grid = Grid { n, center, half, values: Vec::new() };
+        let mut values = vec![0.0; n * n];
+        let rows = Mutex::new(values.chunks_mut(n).enumerate());
+        let threads = thread::available_parallelism().map_or(1, |t| t.get());
+        thread::scope(|s| {
+            for _ in 0..threads {
+                s.spawn(|| loop {
+                    // A while let would hold the lock through the row.
+                    let Some((j, row)) = rows.lock().unwrap().next() else { break };
+                    for (i, v) in row.iter_mut().enumerate() {
+                        *v = bath.height(grid.world(i, j));
+                    }
+                });
             }
-        }
+        });
+        grid.values = values;
         grid
     }
 
@@ -62,12 +76,23 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::field::Field;
 
     #[test]
     fn cell_inverts_world() {
         let g = Grid::zeros([1.0, -2.0], 3.0, 50);
         let (x, y) = g.cell(g.world(7, 31));
         assert!((x - 7.0).abs() < 1e-9 && (y - 31.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sampled_cells_hold_the_bath_height_at_their_centers() {
+        let mut bath = Field::new(5.0, 1);
+        bath.remember(&[[0.2, -0.1]]);
+        let g = Grid::sample(&bath, [0.3, 0.1], 1.5, 37);
+        for (j, i) in [(0, 0), (5, 36), (36, 20), (18, 18)] {
+            assert_eq!(g.at(i, j), bath.height(g.world(i, j)));
+        }
     }
 
     #[test]
