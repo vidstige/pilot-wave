@@ -26,9 +26,9 @@ pub struct Droplet {
     pub tint: Vec3,
 }
 
-/// Depth of the droplet's dimple at p.
-pub fn dimple(x: &Droplet, p: Vec2) -> f64 {
-    let r2 = (p[0] - x.center[0]).powi(2) + (p[1] - x.center[1]).powi(2);
+/// Depth at p of the dimple under a droplet at c.
+pub fn dimple(c: Vec2, p: Vec2) -> f64 {
+    let r2 = (p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2);
     let w = DIMPLE.1 * RADIUS;
     DIMPLE.0 * RADIUS * (-0.5 * r2 / (w * w)).exp()
 }
