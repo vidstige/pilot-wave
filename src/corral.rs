@@ -17,11 +17,12 @@ use crate::modes::{modes, Mode};
 pub const BANDWIDTH: f64 = 0.5;
 /// Modes further than this many bandwidths off resonance are dropped.
 const REACH: f64 = 3.0;
-/// Modes are tabulated this far beyond the rim, so a square view of
-/// the disc can sample its corners.
-const OVERHANG: f64 = 1.5;
+/// Modes are tabulated a little beyond the rim so interpolation
+/// stays in range there.
+const OVERHANG: f64 = 1.01;
 
 pub struct Corral {
+    radius: f64,
     modes: Vec<Mode>,
     gains: Vec<f64>,
     amplitudes: Vec<f64>,
@@ -43,6 +44,7 @@ impl Corral {
             .map(|(m, w)| scale * w / m.norm(radius))
             .collect();
         Corral {
+            radius,
             amplitudes: vec![0.0; modes.len()],
             modes,
             gains,
@@ -52,7 +54,11 @@ impl Corral {
 }
 
 impl Bath for Corral {
+    /// Zero beyond the rim, where the bath is flat.
     fn height(&self, p: Vec2) -> f64 {
+        if p[0] * p[0] + p[1] * p[1] > self.radius * self.radius {
+            return 0.0;
+        }
         self.modes.iter().zip(&self.amplitudes)
             .map(|(m, a)| a * m.value(p))
             .sum()
