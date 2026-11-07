@@ -10,5 +10,6 @@ pub mod modes;
 pub mod oblique;
 pub mod png;
 pub mod rng;
+pub mod scene;
 pub mod topdown;
 pub mod walker;
