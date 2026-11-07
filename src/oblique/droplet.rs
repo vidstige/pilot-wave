@@ -1,4 +1,4 @@
-//! Droplets as spheres resting on the bath.
+//! Droplets: dark glass spheres resting in dimples of the bath.
 use super::{add, dot, fresnel, mul, normalize, reflect, scale};
 use super::{sky, smoothstep, sub, Vec3};
 use super::{FILL, KEY, KEY_COLOR, LIQUID};
@@ -102,8 +102,8 @@ fn through(n: Vec3, v: Vec3) -> Vec3 {
 }
 
 /// The environment and the key as seen in direction r.
-fn light(r: Vec3, specular: f64) -> Vec3 {
-    let glint = dot(r, normalize(KEY)).max(0.0).powf(specular);
+fn light(r: Vec3) -> Vec3 {
+    let glint = dot(r, normalize(KEY)).max(0.0).powf(GLOSS);
     add(environment(r), scale(KEY_COLOR, glint))
 }
 
@@ -111,8 +111,8 @@ fn light(r: Vec3, specular: f64) -> Vec3 {
 /// refracted, upside down, through tinted oil, under a Fresnel mirror.
 fn shade(x: &Droplet, n: Vec3, v: Vec3) -> Vec3 {
     let tint = add(scale([1.0; 3], 1.0 - TINT), scale(x.tint, TINT));
-    let body = scale(mul(tint, light(through(n, v), GLOSS)), CLARITY);
-    let mirror = light(reflect(n, v), GLOSS);
+    let body = scale(mul(tint, light(through(n, v))), CLARITY);
+    let mirror = light(reflect(n, v));
     let f = fresnel(dot(n, v));
     add(scale(body, 1.0 - f), scale(mirror, f))
 }
