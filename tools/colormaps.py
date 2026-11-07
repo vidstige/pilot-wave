@@ -1,7 +1,7 @@
 """Dump matplotlib colormaps as Rust tables into src/colormap.rs."""
 import matplotlib
 
-MAPS = ["viridis", "magma", "coolwarm", "twilight_shifted"]
+MAPS = ["viridis", "coolwarm"]
 STEPS = 256
 
 

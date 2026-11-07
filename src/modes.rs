@@ -2,6 +2,8 @@
 //! cos or sin of m·θ, with Jm'(k R) = 0. Jm comes from its integral
 //! representation, which the trapezoid rule evaluates to machine
 //! precision once the number of points exceeds m + x by a margin.
+//! That is slow, so each mode tabulates Jm and Jm' along the radius
+//! once and interpolates linearly after that.
 use std::f64::consts::{PI, TAU};
 
 use crate::bath::Vec2;
@@ -10,6 +12,7 @@ const QUADRATURE: usize = 128;
 const SCAN_START: f64 = 0.1;
 const SCAN_STEP: f64 = 0.05;
 const BISECTIONS: usize = 60;
+const TABLE_STEP: f64 = 0.002;
 
 pub fn jm(m: u32, x: f64) -> f64 {
     let n = QUADRATURE as f64;
@@ -37,20 +40,24 @@ fn bisect(m: u32, mut lo: f64, mut hi: f64) -> f64 {
 }
 
 /// Positive zeros of Jm' up to the given bound, in increasing order.
+/// The first one lies above m, and below it Jm' sinks under rounding
+/// noise, so the scan starts there.
 pub fn neumann_zeros(m: u32, upto: f64) -> Vec<f64> {
-    let steps = ((upto - SCAN_START) / SCAN_STEP) as usize;
+    let start = SCAN_START.max(m as f64);
+    let steps = ((upto - start) / SCAN_STEP).max(0.0) as usize;
     (0..steps)
-        .map(|i| SCAN_START + SCAN_STEP * i as f64)
+        .map(|i| start + SCAN_STEP * i as f64)
         .filter(|&x| jm_prime(m, x).signum() != jm_prime(m, x + SCAN_STEP).signum())
         .map(|x| bisect(m, x, x + SCAN_STEP))
         .collect()
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Mode {
     pub m: u32,
     pub k: f64,
     pub sine: bool,
+    table: Vec<(f64, f64)>,
 }
 
 fn polar(p: Vec2) -> (f64, f64) {
@@ -58,6 +65,24 @@ fn polar(p: Vec2) -> (f64, f64) {
 }
 
 impl Mode {
+    /// A mode usable out to the given radius.
+    pub fn new(m: u32, k: f64, sine: bool, reach: f64) -> Mode {
+        let table = (0..=(reach / TABLE_STEP) as usize + 1)
+            .map(|i| k * TABLE_STEP * i as f64)
+            .map(|x| (jm(m, x), jm_prime(m, x)))
+            .collect();
+        Mode { m, k, sine, table }
+    }
+
+    /// Jm(k r) and Jm'(k r) by interpolation.
+    fn radial(&self, r: f64) -> (f64, f64) {
+        let x = r / TABLE_STEP;
+        let i = (x as usize).min(self.table.len() - 2);
+        let t = x - i as f64;
+        let (a, b) = (self.table[i], self.table[i + 1]);
+        (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
+    }
+
     fn angular(&self, theta: f64) -> f64 {
         let a = self.m as f64 * theta;
         if self.sine { a.sin() } else { a.cos() }
@@ -71,13 +96,22 @@ impl Mode {
 
     pub fn value(&self, p: Vec2) -> f64 {
         let (r, theta) = polar(p);
+        self.radial(r).0 * self.angular(theta)
+    }
+
+    /// The value straight from the integral, slow; the reference
+    /// that tests hold the table and gradient against.
+    #[cfg(test)]
+    pub fn exact(&self, p: Vec2) -> f64 {
+        let (r, theta) = polar(p);
         jm(self.m, self.k * r) * self.angular(theta)
     }
 
     pub fn gradient(&self, p: Vec2) -> Vec2 {
         let (r, theta) = polar(p);
-        let radial = self.k * jm_prime(self.m, self.k * r) * self.angular(theta);
-        let tangential = jm(self.m, self.k * r) * self.angular_prime(theta) / r;
+        let (j, j_prime) = self.radial(r);
+        let radial = self.k * j_prime * self.angular(theta);
+        let tangential = j * self.angular_prime(theta) / r;
         [
             radial * theta.cos() - tangential * theta.sin(),
             radial * theta.sin() + tangential * theta.cos(),
@@ -94,8 +128,9 @@ impl Mode {
     }
 }
 
-/// Every mode of the disc with wavenumber in [lo, hi].
-pub fn modes(radius: f64, lo: f64, hi: f64) -> Vec<Mode> {
+/// Every mode of the disc with wavenumber in [lo, hi], tabulated out
+/// to the given reach.
+pub fn modes(radius: f64, lo: f64, hi: f64, reach: f64) -> Vec<Mode> {
     let mut all = Vec::new();
     for m in 0.. {
         let zeros = neumann_zeros(m, hi * radius);
@@ -103,9 +138,9 @@ pub fn modes(radius: f64, lo: f64, hi: f64) -> Vec<Mode> {
             break;
         }
         for k in zeros.iter().map(|z| z / radius).filter(|&k| k >= lo) {
-            all.push(Mode { m, k, sine: false });
+            all.push(Mode::new(m, k, false, reach));
             if m > 0 {
-                all.push(Mode { m, k, sine: true });
+                all.push(Mode::new(m, k, true, reach));
             }
         }
     }
@@ -136,20 +171,35 @@ mod tests {
     }
 
     #[test]
+    fn high_order_zeros_start_above_the_order() {
+        let zeros = neumann_zeros(20, 40.0);
+        assert!(zeros[0] > 20.0 && zeros[0] < 25.0, "{zeros:?}");
+        assert!(zeros.iter().all(|&z| jm_prime(20, z).abs() < 1e-9));
+    }
+
+    #[test]
+    fn tabulated_values_match_the_integral() {
+        let mode = Mode::new(4, 5.3, false, 2.0);
+        for p in [[0.0, 0.0], [0.3, 0.1], [-0.7, 0.2], [1.5, -0.9]] {
+            assert!((mode.value(p) - mode.exact(p)).abs() < 1e-4);
+        }
+    }
+
+    #[test]
     fn mode_gradient_matches_finite_differences() {
-        let mode = Mode { m: 4, k: 5.3, sine: true };
+        let mode = Mode::new(4, 5.3, true, 2.0);
         for p in [[0.4, 0.2], [-0.7, 0.9], [0.0, -1.1]] {
-            let dx = (mode.value([p[0] + H, p[1]]) - mode.value([p[0] - H, p[1]])) / (2.0 * H);
-            let dy = (mode.value([p[0], p[1] + H]) - mode.value([p[0], p[1] - H])) / (2.0 * H);
+            let dx = (mode.exact([p[0] + H, p[1]]) - mode.exact([p[0] - H, p[1]])) / (2.0 * H);
+            let dy = (mode.exact([p[0], p[1] + H]) - mode.exact([p[0], p[1] - H])) / (2.0 * H);
             let g = mode.gradient(p);
-            assert!((g[0] - dx).abs() < 1e-6 && (g[1] - dy).abs() < 1e-6);
+            assert!((g[0] - dx).abs() < 1e-4 && (g[1] - dy).abs() < 1e-4);
         }
     }
 
     #[test]
     fn closed_form_norm_matches_quadrature() {
         let radius = 2.0;
-        let mode = Mode { m: 2, k: neumann_zeros(2, 10.0)[1] / radius, sine: false };
+        let mode = Mode::new(2, neumann_zeros(2, 10.0)[1] / radius, false, 3.0);
         let n = 200;
         let cell = 2.0 * radius / n as f64;
         let numeric: f64 = (0..n * n)
@@ -163,7 +213,7 @@ mod tests {
 
     #[test]
     fn modes_cover_the_band_and_pair_sines_with_cosines() {
-        let band = modes(2.0, 6.0, 7.0);
+        let band = modes(2.0, 6.0, 7.0, 2.0);
         assert!(band.iter().all(|m| m.k >= 6.0 && m.k <= 7.0));
         let cosines = band.iter().filter(|m| !m.sine).count();
         let sines = band.iter().filter(|m| m.sine).count();

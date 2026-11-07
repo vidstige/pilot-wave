@@ -23,7 +23,7 @@ impl Walkers {
 
 /// Advance every droplet by one bounce under an external force.
 pub fn step(
-    bath: &mut impl Bath,
+    bath: &mut (impl Bath + ?Sized),
     walkers: &mut Walkers,
     external: impl Fn(Vec2) -> Vec2,
     rng: &mut Rng,
@@ -40,8 +40,18 @@ pub fn step(
     bath.remember(&walkers.positions);
 }
 
-pub fn free(_: Vec2) -> Vec2 {
-    [0.0; 2]
+/// Bounce droplets that left the disc back off its rim.
+pub fn confine(walkers: &mut Walkers, radius: f64) {
+    for (p, v) in walkers.positions.iter_mut().zip(&mut walkers.velocities) {
+        let r = (p[0] * p[0] + p[1] * p[1]).sqrt();
+        if r > radius {
+            let n = [p[0] / r, p[1] / r];
+            let outward = v[0] * n[0] + v[1] * n[1];
+            v[0] -= 2.0 * outward * n[0];
+            v[1] -= 2.0 * outward * n[1];
+            *p = [n[0] * radius, n[1] * radius];
+        }
+    }
 }
 
 pub fn spring(stiffness: f64) -> impl Fn(Vec2) -> Vec2 {
@@ -60,7 +70,7 @@ mod tests {
         let mut rng = Rng::new(1);
         (0..bounces)
             .map(|_| {
-                step(&mut f, w, free, &mut rng);
+                step(&mut f, w, spring(0.0), &mut rng);
                 w.positions.clone()
             })
             .collect()

@@ -1,6 +1,7 @@
 mod bath;
 mod bessel;
 mod colormap;
+mod corral;
 mod field;
 mod grid;
 mod image;
@@ -13,45 +14,57 @@ mod walker;
 use std::env;
 
 use bath::{Bath, Vec2};
+use corral::Corral;
 use field::Field;
 use grid::Grid;
 use rng::Rng;
-use walker::{free, spring, step, Walkers};
+use walker::{confine, spring, step, Walkers};
 
 const PIXELS: usize = 600;
 const TRAIL: usize = 400;
 const SPRING: f64 = 0.002;
+const CORRAL_RADIUS: f64 = 2.0;
 const HISTOGRAM_SKIP: usize = 5000;
 
 struct Scene {
+    bath: Box<dyn Bath>,
     walkers: Walkers,
     half: f64,
     follow: bool,
-    trap: bool,
+    spring: f64,
+    rim: f64,
 }
 
-fn scene(name: &str) -> Scene {
+fn scene(name: &str, memory: f64) -> Scene {
+    let free = |walkers: Walkers, half: f64| Scene {
+        bath: Box::new(Field::new(memory, walkers.positions.len())),
+        walkers,
+        half,
+        follow: true,
+        spring: 0.0,
+        rim: f64::INFINITY,
+    };
     match name {
-        "single" => Scene {
-            walkers: Walkers::new(vec![[0.0; 2]], vec![[0.0; 2]]),
-            half: 3.0,
-            follow: true,
-            trap: false,
-        },
-        "pair" => Scene {
-            walkers: Walkers::new(
+        "single" => free(Walkers::new(vec![[0.0; 2]], vec![[0.0; 2]]), 3.0),
+        "pair" => free(
+            Walkers::new(
                 vec![[-0.35, 0.0], [0.35, 0.0]],
                 vec![[0.0, 0.02], [0.0, -0.02]],
             ),
-            half: 2.5,
-            follow: true,
-            trap: false,
-        },
+            2.5,
+        ),
         "trap" => Scene {
-            walkers: Walkers::new(vec![[0.3, 0.0]], vec![[0.0; 2]]),
-            half: 3.0,
             follow: false,
-            trap: true,
+            spring: SPRING,
+            ..free(Walkers::new(vec![[0.3, 0.0]], vec![[0.0; 2]]), 3.0)
+        },
+        "corral" => Scene {
+            bath: Box::new(Corral::new(CORRAL_RADIUS, memory)),
+            walkers: Walkers::new(vec![[0.3, 0.1]], vec![[0.0; 2]]),
+            half: CORRAL_RADIUS,
+            follow: false,
+            spring: 0.0,
+            rim: CORRAL_RADIUS,
         },
         other => panic!("unknown scene {other}"),
     }
@@ -63,9 +76,9 @@ fn centroid(points: &[Vec2]) -> Vec2 {
     [sum[0] / n, sum[1] / n]
 }
 
-fn frame(bath: &impl Bath, scene: &Scene, trails: &[Vec<Vec2>], path: &str) {
+fn frame(scene: &Scene, trails: &[Vec<Vec2>], path: &str) {
     let center = if scene.follow { centroid(&scene.walkers.positions) } else { [0.0; 2] };
-    let grid = Grid::sample(bath, center, scene.half, PIXELS);
+    let grid = Grid::sample(&*scene.bath, center, scene.half, PIXELS);
     let peak = grid.peak();
     let mut image = topdown::paint(&grid, &colormap::COOLWARM, -peak, peak);
     topdown::droplets(&mut image, &grid, trails);
@@ -81,17 +94,13 @@ fn main() {
     let out = args.get(5).map(String::as_str).unwrap_or("out");
     std::fs::create_dir_all(out).expect("create output directory");
 
-    let mut scene = scene(name);
-    let mut field = Field::new(memory, scene.walkers.positions.len());
+    let mut scene = scene(name, memory);
     let mut rng = Rng::new(1);
     let mut trails: Vec<Vec<Vec2>> = scene.walkers.positions.iter().map(|p| vec![*p]).collect();
-    let mut histogram = Grid::zeros([0.0; 2], scene.half, PIXELS / 4);
+    let mut histogram = Grid::zeros([0.0; 2], scene.half, PIXELS / 2);
     for bounce in 1..=bounces {
-        if scene.trap {
-            step(&mut field, &mut scene.walkers, spring(SPRING), &mut rng);
-        } else {
-            step(&mut field, &mut scene.walkers, free, &mut rng);
-        }
+        step(&mut *scene.bath, &mut scene.walkers, spring(scene.spring), &mut rng);
+        confine(&mut scene.walkers, scene.rim);
         for (trail, p) in trails.iter_mut().zip(&scene.walkers.positions) {
             trail.push(*p);
             if trail.len() > TRAIL {
@@ -102,11 +111,9 @@ fn main() {
             histogram.count(scene.walkers.positions[0]);
         }
         if bounce % every == 0 {
-            frame(&field, &scene, &trails, &format!("{out}/{name}_{:05}.png", bounce / every));
+            frame(&scene, &trails, &format!("{out}/{name}_{:05}.png", bounce / every));
         }
     }
-    if scene.trap {
-        let image = topdown::paint(&histogram, &colormap::VIRIDIS, 0.0, histogram.peak());
-        png::write(format!("{out}/{name}_histogram.png"), &image).expect("write histogram");
-    }
+    let image = topdown::paint(&histogram, &colormap::VIRIDIS, 0.0, histogram.peak());
+    png::write(format!("{out}/{name}_histogram.png"), &image).expect("write histogram");
 }

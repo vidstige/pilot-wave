@@ -13,7 +13,7 @@ impl Grid {
         Grid { n, center, half, values: vec![0.0; n * n] }
     }
 
-    pub fn sample(bath: &impl Bath, center: Vec2, half: f64, n: usize) -> Grid {
+    pub fn sample(bath: &(impl Bath + ?Sized), center: Vec2, half: f64, n: usize) -> Grid {
         let mut grid = Grid::zeros(center, half, n);
         for j in 0..n {
             for i in 0..n {
