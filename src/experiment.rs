@@ -37,7 +37,7 @@ pub const DISC_BEAM: f64 = 8.0;
 /// Trap frequency and the orbit radius of the coherent state.
 pub const TRAP: f64 = 0.5;
 const ORBIT: f64 = 4.0;
-pub const BOX_HALF: f64 = 6.0;
+const BOX_HALF: f64 = 6.0;
 
 pub struct Experiment {
     pub name: &'static str,

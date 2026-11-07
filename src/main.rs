@@ -3,7 +3,7 @@ use std::fs;
 
 use pilot_wave::experiment::{
     experiment, mean_transmission, pattern, transmission, Experiment, BARRIER_HEIGHT,
-    BARRIER_WIDTH, BOX_HALF, ENERGY, SPEED,
+    BARRIER_WIDTH, ENERGY, SPEED,
 };
 use pilot_wave::grid::Vec2;
 use pilot_wave::particles::{Kind, Particles};
@@ -75,34 +75,35 @@ fn orbit_error(trails: &[Trail], center: Vec2) -> f64 {
     trails.iter().map(error).fold(0.0, f64::max)
 }
 
-/// Cells next to a wall, where the guidance is least accurate.
-fn beside_wall(wave: &Wave) -> Vec<bool> {
+/// Cells in a wall or next to one, where the guidance is least
+/// accurate and the density vanishes.
+fn at_wall(wave: &Wave) -> Vec<bool> {
     let n = wave.n;
-    let beside = |k: usize| {
+    let wall = |k: usize| wave.keep[k] == 0.0;
+    let at = |k: usize| {
         let (i, j) = (k % n, k / n);
         let inner = i > 0 && j > 0 && i < n - 1 && j < n - 1;
-        let wall = || [k - 1, k + 1, k - n, k + n].iter().any(|&m| wave.keep[m] == 0.0);
-        inner && wave.keep[k] > 0.0 && wall()
+        wall(k) || inner && [k - 1, k + 1, k - n, k + n].into_iter().any(wall)
     };
-    (0..n * n).map(beside).collect()
+    (0..n * n).map(at).collect()
 }
 
-/// Particles in the cells beside walls against the probability there,
-/// which equivariance says should agree.
+/// Particles in or beside walls against the probability there, which
+/// equivariance says should agree.
 fn print_walls(name: &str, wave: &Wave, positions: &[Vec2]) {
-    let beside = beside_wall(wave);
+    let at = at_wall(wave);
     let cell = |p: &Vec2| {
         let (x, y) = wave.cell(*p);
         let clamp = |c: f64| c.round().clamp(0.0, (wave.n - 1) as f64) as usize;
         wave.index((clamp(x), clamp(y)))
     };
-    let stuck = positions.iter().filter(|p| beside[cell(p)]).count();
+    let stuck = positions.iter().filter(|p| at[cell(p)]).count();
     let fraction = stuck as f64 / positions.len() as f64;
     let probability: f64 = (0..wave.n * wave.n)
-        .filter(|&k| beside[k])
+        .filter(|&k| at[k])
         .map(|k| wave.density(k) as f64 * wave.dx * wave.dx)
         .sum();
-    println!("{name}: {fraction:.4} of the particles beside walls, probability {probability:.4}");
+    println!("{name}: {fraction:.4} of the particles at walls, probability there {probability:.4}");
 }
 
 fn print_screen(name: &str, screen: &Screen, count: usize) {
@@ -162,8 +163,7 @@ fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail],
             );
         }
         "box" => {
-            let outside = end.iter().filter(|p| p[0].abs().max(p[1].abs()) > BOX_HALF).count();
-            println!("box: norm {:.4}, {outside} particles outside the box", e.wave.norm());
+            println!("box: norm {:.4}", e.wave.norm());
             print_walls(e.name, &e.wave, end);
         }
         "barrier" => print_barrier(e, start, end),
