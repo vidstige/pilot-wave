@@ -23,7 +23,9 @@ const TRAILS: usize = 300;
 /// Time between samples of the density added into the
 /// time-integrated picture behind the trails.
 const GLOW_EVERY: f64 = 0.05;
-const BINS: usize = 120;
+/// Bins of a whole number of cells, eight on the 1024 grid, so each
+/// gathers the same share of the current.
+const BINS: usize = 128;
 const PLOT: (usize, usize) = (800, 300);
 
 type Trail = Vec<Vec2>;
