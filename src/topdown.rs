@@ -1,7 +1,6 @@
 //! Top-down view: grid values through a colormap, droplets on top.
 use crate::colormap::{sample, Colormap};
-use crate::bath::Vec2;
-use crate::grid::Grid;
+use crate::grid::{Grid, Vec2};
 use crate::image::{Color, Image};
 
 pub const DROPLET_RADIUS: f64 = 4.0;

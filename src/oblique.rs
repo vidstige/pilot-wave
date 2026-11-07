@@ -4,8 +4,7 @@ mod droplet;
 use std::sync::Mutex;
 use std::thread;
 
-use crate::bath::Vec2;
-use crate::grid::Grid;
+use crate::grid::{Grid, Vec2};
 use crate::image::{Color, Image};
 use crate::topdown::DROPLET_COLORS;
 use droplet::Droplet;

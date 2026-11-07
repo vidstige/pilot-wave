@@ -1,7 +1,7 @@
 //! Droplets: dark glossy beads resting in dimples of the bath.
 use super::{add, dot, fresnel, normalize, reflect, scale, sky, sub};
 use super::{Vec3, KEY, KEY_COLOR};
-use crate::bath::Vec2;
+use crate::grid::Vec2;
 
 /// In wavelengths, like the grid.
 pub const RADIUS: f64 = 0.09;
