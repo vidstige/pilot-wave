@@ -33,6 +33,11 @@ impl Packet {
         }
     }
 
+    /// The density at the packet's centre.
+    pub fn peak(&self) -> f32 {
+        (1.0 / (2.0 * PI * self.width[0] * self.width[1])) as f32
+    }
+
     /// A position drawn from |ψ|², which is Gaussian with these widths.
     pub fn sample(&self, rng: &mut Rng) -> Vec2 {
         [

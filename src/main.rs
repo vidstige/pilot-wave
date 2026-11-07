@@ -48,13 +48,13 @@ fn main() {
             trail.push(*p);
         }
         if step % per_frame == 0 || step == steps {
-            let mut image = view::field(&e.wave, PIXELS, view::Style::Phase);
+            let mut image = view::field(&e.wave, PIXELS, view::Style::Phase, e.packet.peak());
             let heads: Vec<Vec<Vec2>> = particles.positions.iter().map(|p| vec![*p]).collect();
             view::particles(&mut image, &e.wave, &heads);
             png::write(format!("{out}/{name}_{:04}.png", step / per_frame), &image).expect("write frame");
         }
     }
-    let mut image = view::field(&e.wave, PIXELS, view::Style::Density);
+    let mut image = view::field(&e.wave, PIXELS, view::Style::Density, e.packet.peak());
     view::particles(&mut image, &e.wave, &trails);
     png::write(format!("{out}/{name}_trajectories.png"), &image).expect("write trajectories");
     if let Some(screen) = &screen {

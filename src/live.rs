@@ -145,7 +145,8 @@ impl Live {
                 return oblique::render(&grid, &[], w, h, OBLIQUE_SAMPLES);
             }
         };
-        let mut image = view::field(wave, wave.n.min(FIELD_PIXELS), style);
+        let peak = self.experiment.packet.peak();
+        let mut image = view::field(wave, wave.n.min(FIELD_PIXELS), style, peak);
         let heads: Vec<Vec<Vec2>> =
             self.particles.positions.iter().map(|p| vec![*p]).collect();
         view::particles(&mut image, wave, &heads);

@@ -10,8 +10,9 @@ use crate::wave::Wave;
 const WALL: Color = [70, 70, 76];
 const PARTICLE: Color = [255, 255, 255];
 const TRAIL: Color = [255, 220, 160];
-/// Brightness is density to this power, so faint waves still show.
-const GAMMA: f32 = 0.4;
+/// Brightness spans this many decades of density below the reference
+/// peak, so faint fringes still show and frames stay comparable.
+const DECADES: f32 = 3.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Style {
@@ -30,15 +31,20 @@ fn hue(t: f64) -> Color {
     [channel(0.0), channel(2.0 / 3.0), channel(1.0 / 3.0)]
 }
 
-pub fn field(wave: &Wave, pixels: usize, style: Style) -> Image {
-    let peak = (0..wave.n * wave.n).map(|k| wave.density(k)).fold(0.0, f32::max).max(1e-30);
+/// Brightness of a density relative to the reference peak.
+fn brightness(density: f32, peak: f32) -> f64 {
+    (1.0 + (density / peak).max(1e-30).log10() / DECADES).clamp(0.0, 1.0) as f64
+}
+
+/// The field at every pixel, densities relative to the given peak.
+pub fn field(wave: &Wave, pixels: usize, style: Style, peak: f32) -> Image {
     let mut image = Image::new(pixels, pixels, [0; 3]);
     for y in 0..pixels {
         for x in 0..pixels {
             let i = x * wave.n / pixels;
             let j = (pixels - 1 - y) * wave.n / pixels;
             let k = wave.index((i, j));
-            let brightness = (wave.density(k) / peak).powf(GAMMA) as f64;
+            let brightness = brightness(wave.density(k), peak);
             let color = if wave.keep[k] == 0.0 {
                 WALL
             } else {
@@ -90,6 +96,14 @@ pub fn relief(wave: &Wave, cells: usize) -> Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brightness_spans_the_decades_below_the_peak() {
+        assert_eq!(brightness(1.0, 1.0), 1.0);
+        assert_eq!(brightness(2.0, 1.0), 1.0);
+        assert!((brightness(1e-3, 1.0) - 0.0).abs() < 1e-6);
+        assert!((brightness(1e-1, 1.0) - 2.0 / 3.0).abs() < 1e-6);
+    }
 
     #[test]
     fn hue_wheel_passes_through_the_primaries_and_wraps() {
