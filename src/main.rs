@@ -1,25 +1,12 @@
-mod bath;
-mod bessel;
-mod colormap;
-mod corral;
-mod field;
-mod grid;
-mod image;
-mod modes;
-mod oblique;
-mod png;
-mod rng;
-mod topdown;
-mod walker;
-
 use std::env;
 
-use bath::{Bath, Vec2};
-use corral::Corral;
-use field::Field;
-use grid::Grid;
-use rng::Rng;
-use walker::{confine, spring, step, Walkers};
+use pilot_wave::bath::{Bath, Vec2};
+use pilot_wave::corral::Corral;
+use pilot_wave::field::Field;
+use pilot_wave::grid::Grid;
+use pilot_wave::rng::Rng;
+use pilot_wave::walker::{confine, spring, step, Walkers};
+use pilot_wave::{colormap, oblique, png, topdown};
 
 const PIXELS: usize = 600;
 const TRAIL: usize = 400;
