@@ -7,6 +7,7 @@
 //! 1991), which keeps the scheme explicit and stable while
 //! dt < 2 / (max kinetic + max potential). Hard walls are cells kept
 //! at zero; an absorbing sponge at the edges swallows what reaches it.
+use std::sync::Mutex;
 use std::thread;
 
 use crate::grid::Vec2;
@@ -18,6 +19,10 @@ const STENCIL: [f32; 5] = [-1.0 / 12.0, 4.0 / 3.0, -5.0 / 2.0, 4.0 / 3.0, -1.0 /
 /// Sponge depth at each edge, in cells, and its strength.
 const SPONGE: usize = 24;
 const SPONGE_RATE: f32 = 40.0;
+/// Bands per thread, so a fast core can take over bands from a slow
+/// one: 0.49 ms for a 1024² step on an M1 (4 fast and 4 slow cores)
+/// against 0.52 ms with one band per thread.
+const BANDS_PER_THREAD: usize = 2;
 
 pub struct Wave {
     pub n: usize,
@@ -30,13 +35,128 @@ pub struct Wave {
     pub keep: Vec<f32>,
     /// Steps taken so far times dt.
     pub time: f64,
-    scratch: Vec<f32>,
 }
 
 /// Largest stable step for the given cell size and potential.
 pub fn stable_dt(dx: f64, potential_max: f64) -> f64 {
     let kinetic_max = 2.0 * 16.0 / 3.0 / (dx * dx) / 2.0;
     0.5 * 2.0 / (kinetic_max + potential_max)
+}
+
+/// One interior row of f ← (f + c H g) keep, given the five rows of g
+/// centred on it. H g is zero on the outer two cells at each end.
+fn update_row(
+    f: &mut [f32],
+    g: [&[f32]; 5],
+    potential: &[f32],
+    keep: &[f32],
+    c: f32,
+    inv: f32,
+) {
+    let n = f.len();
+    let [s0, s1, s2, s3, s4] = STENCIL;
+    let [a, b, m, d, e] = g.map(|row| &row[..n]);
+    let (potential, keep) = (&potential[..n], &keep[..n]);
+    for i in 2..n - 2 {
+        let lap = s0 * (m[i - 2] + a[i])
+            + s1 * (m[i - 1] + b[i])
+            + s2 * (m[i] + m[i])
+            + s3 * (m[i + 1] + d[i])
+            + s4 * (m[i + 2] + e[i]);
+        let h = -0.5 * lap * inv + potential[i] * m[i];
+        f[i] = (f[i] + c * h) * keep[i];
+    }
+    for i in [0, 1, n - 2, n - 1] {
+        f[i] *= keep[i];
+    }
+}
+
+/// Rows of one component from row `first` on: copies of the rows
+/// above a band, the band itself, and copies of the rows below it.
+struct Rows<'a> {
+    first: usize,
+    parts: [&'a [f32]; 3],
+}
+
+impl<'a> Rows<'a> {
+    fn row(&self, n: usize, j: usize) -> &'a [f32] {
+        let mut k = (j - self.first) * n;
+        for part in self.parts {
+            if k < part.len() {
+                return &part[k..k + n];
+            }
+            k -= part.len();
+        }
+        unreachable!("row {j} is outside the band and its halo")
+    }
+}
+
+/// What a row update needs besides the rows themselves.
+struct Lattice<'a> {
+    n: usize,
+    inv: f32,
+    potential: &'a [f32],
+    keep: &'a [f32],
+}
+
+impl Lattice<'_> {
+    /// Row j of f ← (f + c H g) keep.
+    fn update(&self, j: usize, c: f32, g: &Rows, f: &mut [f32]) {
+        let n = self.n;
+        let keep = &self.keep[j * n..][..n];
+        if j < 2 || j >= n - 2 {
+            for (f, k) in f.iter_mut().zip(keep) {
+                *f *= k;
+            }
+        } else {
+            let rows = [0, 1, 2, 3, 4].map(|o| g.row(n, j + o - 2));
+            let potential = &self.potential[j * n..][..n];
+            update_row(f, rows, potential, keep, c, self.inv);
+        }
+    }
+}
+
+/// Copies of the rows of f up to `depth` above and below rows j0..j1.
+fn halo(f: &[f32], n: usize, j0: usize, j1: usize, depth: usize) -> [Vec<f32>; 2] {
+    let above = j0.saturating_sub(depth) * n..j0 * n;
+    let below = j1 * n..(j1 + depth).min(n) * n;
+    [f[above].to_vec(), f[below].to_vec()]
+}
+
+/// Steps the band of rows starting at j0 in a single sweep, re on row
+/// j then im on row j - 2, so each row is read from memory once. The
+/// band needs nothing from its neighbours during the sweep: it gets
+/// copies of im four rows deep around it, enough to advance its own
+/// copies of the two re rows on either side that im needs.
+fn advance(
+    lattice: &Lattice,
+    dt: f32,
+    j0: usize,
+    (re, im): (&mut [f32], &mut [f32]),
+    [mut re_above, mut re_below]: [Vec<f32>; 2],
+    [im_above, im_below]: [Vec<f32>; 2],
+) {
+    let n = lattice.n;
+    let j1 = j0 + re.len() / n;
+    let im_first = j0 - im_above.len() / n;
+    let re_first = j0 - re_above.len() / n;
+    let g = Rows { first: im_first, parts: [&im_above, &*im, &im_below] };
+    for (k, f) in re_above.chunks_mut(n).enumerate() {
+        lattice.update(re_first + k, dt, &g, f);
+    }
+    for (k, f) in re_below.chunks_mut(n).enumerate() {
+        lattice.update(j1 + k, dt, &g, f);
+    }
+    for j in j0..j1 + 2 {
+        if j < j1 {
+            let g = Rows { first: im_first, parts: [&im_above, &*im, &im_below] };
+            lattice.update(j, dt, &g, &mut re[(j - j0) * n..][..n]);
+        }
+        if j >= j0 + 2 {
+            let g = Rows { first: re_first, parts: [&re_above, &*re, &re_below] };
+            lattice.update(j - 2, -dt, &g, &mut im[(j - 2 - j0) * n..][..n]);
+        }
+    }
 }
 
 impl Wave {
@@ -49,7 +169,6 @@ impl Wave {
             potential: vec![0.0; n * n],
             keep: vec![1.0; n * n],
             time: 0.0,
-            scratch: vec![0.0; n * n],
         }
     }
 
@@ -131,47 +250,39 @@ impl Wave {
         })
     }
 
-    /// Hamiltonian applied to one component at every interior cell,
-    /// rows split among the cores.
-    fn hamiltonian(n: usize, dx: f64, potential: &[f32], f: &[f32], out: &mut [f32]) {
-        let inv = 1.0 / (dx * dx) as f32;
-        let threads = thread::available_parallelism().map_or(1, |t| t.get());
-        let band = n.div_ceil(threads);
-        let mut rows: Vec<(usize, &mut [f32])> = out.chunks_mut(n).enumerate().collect();
-        thread::scope(|s| {
-            for chunk in rows.chunks_mut(band) {
-                s.spawn(move || {
-                    for (j, row) in chunk.iter_mut() {
-                        if *j < 2 || *j >= n - 2 {
-                            continue;
-                        }
-                        for i in 2..n - 2 {
-                            let k = *j * n + i;
-                            let lap: f32 = STENCIL.iter().zip(-2i64..)
-                                .map(|(c, o)| {
-                                    let (a, b) = (k as i64 + o, k as i64 + o * n as i64);
-                                    c * (f[a as usize] + f[b as usize])
-                                })
-                                .sum();
-                            row[i] = -0.5 * lap * inv + potential[k] * f[k];
-                        }
-                    }
-                });
-            }
-        });
-    }
-
+    /// One step, rows split into bands that the threads take in turn.
     pub fn step(&mut self, dt: f64) {
-        let dt = dt as f32;
-        let h = &mut self.scratch;
-        Wave::hamiltonian(self.n, self.dx, &self.potential, &self.im, h);
-        for (r, (h, keep)) in self.re.iter_mut().zip(h.iter().zip(&self.keep)) {
-            *r = (*r + dt * h) * keep;
-        }
-        Wave::hamiltonian(self.n, self.dx, &self.potential, &self.re, h);
-        for (i, (h, keep)) in self.im.iter_mut().zip(h.iter().zip(&self.keep)) {
-            *i = (*i - dt * h) * keep;
-        }
+        let (n, dt) = (self.n, dt as f32);
+        let lattice = Lattice {
+            n,
+            inv: 1.0 / (self.dx * self.dx) as f32,
+            potential: &self.potential,
+            keep: &self.keep,
+        };
+        let threads = thread::available_parallelism().map_or(1, |t| t.get());
+        let band = n.div_ceil(threads * BANDS_PER_THREAD);
+        let starts = (0..n).step_by(band);
+        let halos: Vec<_> = starts
+            .clone()
+            .map(|j0| {
+                let j1 = (j0 + band).min(n);
+                (halo(&self.re, n, j0, j1, 2), halo(&self.im, n, j0, j1, 4))
+            })
+            .collect();
+        let bands = self.re.chunks_mut(band * n).zip(self.im.chunks_mut(band * n));
+        let queue = Mutex::new(starts.zip(bands).zip(halos));
+        let work = || loop {
+            let Some(((j0, rows), (re, im))) = queue.lock().unwrap().next() else {
+                break;
+            };
+            advance(&lattice, dt, j0, rows, re, im);
+        };
+        thread::scope(|s| {
+            for _ in 1..threads {
+                s.spawn(work);
+            }
+            work();
+        });
         self.time += dt as f64;
     }
 }
