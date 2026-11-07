@@ -15,9 +15,11 @@ pub const NAMES: [&str; 8] = [
 pub const SPEED: f64 = TAU;
 pub const ENERGY: f64 = SPEED * SPEED / 2.0;
 const DX: f64 = 0.1;
-/// Where the packet starts and where arrivals are counted.
+/// Where the packet starts and where arrivals are counted, pulled in
+/// on small grids to stay this far from the edge.
 const START: f64 = -20.0;
 const SCREEN: f64 = 30.0;
+const MARGIN: f64 = 6.0;
 /// Walls at y = 0 with this thickness.
 const WALL: f64 = 0.4;
 pub const SLIT_WIDTH: f64 = 1.0;
@@ -76,33 +78,30 @@ fn slits(centers: &[f64], width: f64) -> impl Fn(Vec2) -> bool + '_ {
     move |p| in_wall(p) && !centers.iter().any(|c| (p[0] - c).abs() < width / 2.0)
 }
 
-/// How far the packet travels to the screen and back off the walls.
-fn travel(wave: &Wave) -> f64 {
-    (SCREEN - START + 10.0).min(wave.extent()) / SPEED
-}
-
 pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
     let mut wave = Wave::new(n, DX);
-    let beam = |wave: &Wave| upward([0.0, START.max(-wave.extent() / 2.0 + 6.0)], [6.0, 2.0]);
+    let half = wave.extent() / 2.0;
+    let start = START.max(-half + MARGIN);
+    let screen_y = SCREEN.min(half - MARGIN);
     let (packet, potential_max, screen) = match name {
-        "free" => (upward([0.0, START], [1.5, 1.5]), 0.0, None),
+        "free" => (upward([0.0, start], [1.5, 1.5]), 0.0, None),
         "double-slit" => {
             let d = SLIT_SEPARATION / 2.0;
             wall(&mut wave, slits(&[-d, d], SLIT_WIDTH));
-            (beam(&wave), 0.0, Some(SCREEN))
+            (upward([0.0, start], [6.0, 2.0]), 0.0, Some(screen_y))
         }
         "single-slit" => {
             wall(&mut wave, slits(&[0.0], SINGLE_SLIT_WIDTH));
-            (beam(&wave), 0.0, Some(SCREEN))
+            (upward([0.0, start], [6.0, 2.0]), 0.0, Some(screen_y))
         }
         "barrier" => {
             let height = BARRIER_HEIGHT * ENERGY;
             potential(&mut wave, |p| if p[1].abs() < BARRIER_WIDTH / 2.0 { height } else { 0.0 });
-            (upward([0.0, START], [4.0, 2.0]), height, Some(SCREEN))
+            (upward([0.0, start], [4.0, 2.0]), height, Some(screen_y))
         }
         "disc" => {
             wall(&mut wave, |p| p[0].hypot(p[1]) < DISC_RADIUS);
-            (upward([0.0, START], [3.0, 2.0]), 0.0, Some(SCREEN))
+            (upward([0.0, start], [3.0, 2.0]), 0.0, Some(screen_y))
         }
         "harmonic" => {
             potential(&mut wave, |p| 0.5 * TRAP * TRAP * (p[0] * p[0] + p[1] * p[1]));
@@ -130,15 +129,15 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
     let duration = match name {
         "harmonic" | "ground" => 2.0 * TAU / TRAP,
         "box" | "free" => 6.0,
-        _ => travel(&wave),
+        _ => (screen_y - start + 10.0) / SPEED,
     };
     Experiment { name, wave, packet, kind, dt, duration, screen }
 }
 
-/// Fraunhofer intensity on the screen for slits of the given width at
-/// the given centres, as a function of x on the screen.
-pub fn fraunhofer(x: f64, centers: &[f64], width: f64) -> f64 {
-    let sin = x / x.hypot(SCREEN - WALL / 2.0);
+/// Fraunhofer intensity for slits of the given width at the given
+/// centres, as a function of x on a screen at the given y.
+pub fn fraunhofer(x: f64, y: f64, centers: &[f64], width: f64) -> f64 {
+    let sin = x / x.hypot(y - WALL / 2.0);
     let beta = PI * width * sin;
     let envelope = if beta.abs() < 1e-9 { 1.0 } else { (beta.sin() / beta).powi(2) };
     let (re, im) = centers.iter().fold((0.0, 0.0), |(re, im), c| {

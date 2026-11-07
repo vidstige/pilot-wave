@@ -17,9 +17,6 @@ const FIELD_PIXELS: usize = 512;
 const OBLIQUE_CELLS: usize = 160;
 const OBLIQUE_PIXELS: usize = 360;
 const OBLIQUE_SAMPLES: usize = 1;
-/// Least distance from the screen to the domain edge, clear of the
-/// sponge, for grids too small to reach the experiment's screen.
-const SCREEN_MARGIN: f64 = 5.0;
 /// Particles closer than this to the domain's edge are dropped.
 const EDGE: f64 = 1.0;
 const BINS: usize = 120;
@@ -87,7 +84,7 @@ impl Live {
         let mut particles = Particles::new(setup.kind, positions, e.packet.wavevector);
         crop(&mut particles, &e.wave);
         let half = e.wave.extent() / 2.0;
-        let screen = e.screen.map(|y| Screen::new(y.min(half - SCREEN_MARGIN), half, BINS));
+        let screen = e.screen.map(|y| Screen::new(y, half, BINS));
         Live { setup, steps: 0, owed: 0.0, experiment: e, particles, screen }
     }
 
@@ -153,13 +150,10 @@ impl Live {
         image
     }
 
-    /// Fraunhofer intensity at the screen's bins. The formula is for
-    /// the experiment's screen, so x scales by the ratio of distances
-    /// when the screen sits closer.
+    /// Fraunhofer intensity at the screen's bins, for slits.
     fn theory(&self, screen: &Screen) -> Option<Vec<f64>> {
         let (centers, width) = slits(self.setup.name)?;
-        let ratio = self.experiment.screen? / screen.y;
-        let at = |b| fraunhofer(screen.x(b) * ratio, &centers, width);
+        let at = |b| fraunhofer(screen.x(b), screen.y, &centers, width);
         Some((0..screen.bins).map(at).collect())
     }
 
@@ -247,7 +241,7 @@ mod tests {
         let live = Live::new(setup("double-slit"));
         let half = live.experiment.wave.extent() / 2.0;
         let screen = live.screen.as_ref().unwrap();
-        assert!(screen.y <= half - SCREEN_MARGIN);
+        assert!(screen.y < half);
         assert!(live.plot(64, 32).is_some());
         assert_eq!(live.legend().len(), 3);
         let free = Live::new(setup("free"));

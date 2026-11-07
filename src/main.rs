@@ -60,8 +60,8 @@ fn main() {
     if let Some(screen) = &screen {
         let theory: Vec<f64> = (0..BINS)
             .map(|b| match name {
-                "double-slit" => fraunhofer(screen.x(b), &[-SLIT_SEPARATION / 2.0, SLIT_SEPARATION / 2.0], SLIT_WIDTH),
-                "single-slit" => fraunhofer(screen.x(b), &[0.0], SINGLE_SLIT_WIDTH),
+                "double-slit" => fraunhofer(screen.x(b), screen.y, &[-SLIT_SEPARATION / 2.0, SLIT_SEPARATION / 2.0], SLIT_WIDTH),
+                "single-slit" => fraunhofer(screen.x(b), screen.y, &[0.0], SINGLE_SLIT_WIDTH),
                 _ => 0.0,
             })
             .collect();
