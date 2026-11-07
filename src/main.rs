@@ -3,6 +3,7 @@ mod colormap;
 mod field;
 mod grid;
 mod image;
+mod oblique;
 mod png;
 mod rng;
 mod topdown;
