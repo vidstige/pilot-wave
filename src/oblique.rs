@@ -1,4 +1,4 @@
-//! Oblique view: the grid as a lit liquid surface, droplets as spheres.
+//! Oblique view: the grid as a lit liquid surface, droplets as beads.
 mod droplet;
 
 use std::sync::Mutex;
@@ -33,25 +33,11 @@ const REACH: f64 = 4.0;
 const EXPOSURE: f64 = 1.5;
 const GOLDEN: f64 = 0.618_033_988_749_895;
 
-fn add(a: Vec3, b: Vec3) -> Vec3 {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-fn sub(a: Vec3, b: Vec3) -> Vec3 {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn scale(a: Vec3, s: f64) -> Vec3 {
-    [a[0] * s, a[1] * s, a[2] * s]
-}
-
-fn dot(a: Vec3, b: Vec3) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn normalize(a: Vec3) -> Vec3 {
-    scale(a, 1.0 / dot(a, a).sqrt())
-}
+fn add(a: Vec3, b: Vec3) -> Vec3 { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
+fn scale(a: Vec3, s: f64) -> Vec3 { a.map(|x| x * s) }
+fn sub(a: Vec3, b: Vec3) -> Vec3 { add(a, scale(b, -1.0)) }
+fn dot(a: Vec3, b: Vec3) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
+fn normalize(a: Vec3) -> Vec3 { scale(a, 1.0 / dot(a, a).sqrt()) }
 
 fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
@@ -76,6 +62,12 @@ fn elevation(surface: &Grid, p: Vec2) -> f64 {
     row(j) + (row(j + 1) - row(j)) * fy
 }
 
+fn normal(surface: &Grid, p: Vec2) -> Vec3 {
+    let e = surface.half / surface.n as f64;
+    let h = |dx, dy| elevation(surface, [p[0] + dx, p[1] + dy]);
+    normalize([h(-e, 0.0) - h(e, 0.0), h(0.0, -e) - h(0.0, e), 2.0 * e])
+}
+
 /// World heights of the bath: the waves scaled to the relief, fading
 /// out towards the edge and dipping under each droplet.
 fn relief(grid: &Grid, droplets: &[Vec2]) -> Grid {
@@ -88,27 +80,18 @@ fn relief(grid: &Grid, droplets: &[Vec2]) -> Grid {
         let dips: f64 = droplets.iter().map(|&x| droplet::dimple(x, p)).sum();
         k * v * fade - dips
     };
-    let values = grid.values.iter().enumerate()
-        .map(|(i, &v)| height(i, v))
-        .collect();
+    let values = grid.values.iter().enumerate();
+    let values = values.map(|(i, &v)| height(i, v)).collect();
     Grid { values, ..Grid::zeros(grid.center, grid.half, grid.n) }
-}
-
-fn normal(surface: &Grid, p: Vec2) -> Vec3 {
-    let e = surface.half / surface.n as f64;
-    let h = |dx, dy| elevation(surface, [p[0] + dx, p[1] + dy]);
-    normalize([h(-e, 0.0) - h(e, 0.0), h(0.0, -e) - h(0.0, e), 2.0 * e])
 }
 
 /// Distance along the ray to the surface, marching one cell at a time.
 fn march(surface: &Grid, o: Vec3, d: Vec3) -> f64 {
-    let top = RELIEF * surface.half;
     let dt = 2.0 * surface.half / surface.n as f64 / d[0].hypot(d[1]);
     let gap = |t: f64| {
-        let p = [o[0] + t * d[0], o[1] + t * d[1]];
-        o[2] + t * d[2] - elevation(surface, p)
+        o[2] + t * d[2] - elevation(surface, [o[0] + t * d[0], o[1] + t * d[1]])
     };
-    let mut t = (top - o[2]) / d[2];
+    let mut t = (RELIEF * surface.half - o[2]) / d[2];
     let mut g = gap(t);
     loop {
         let next = gap(t + dt);
@@ -136,42 +119,22 @@ fn sky(r: Vec3) -> Vec3 {
 }
 
 /// The bath at p with normal n seen from v: Lambert and Blinn-Phong
-/// from the key light, the sky and droplets mirrored by Fresnel.
+/// from the key light, the sky and droplets mirrored by Fresnel. Only
+/// droplets right above mirror, as the exaggerated waves would also
+/// mirror them in troughs far away. Darkening the sky gives the soft
+/// contact shadow.
 fn surface(scene: &Scene, p: Vec3, n: Vec3, v: Vec3) -> Vec3 {
     let l = normalize(KEY);
-    let h = normalize(add(l, v));
     let open = 1.0 - droplet::occlusion(&scene.droplets, p, n);
-    let lambert = dot(n, l).max(0.0);
-    let diffuse = lambert + open * FILL * (0.5 + 0.5 * n[2]);
-    let specular = dot(n, h).max(0.0).powf(SHININESS);
+    let diffuse = dot(n, l).max(0.0) + open * FILL * (0.5 + 0.5 * n[2]);
+    let specular = dot(n, normalize(add(l, v))).max(0.0).powf(SHININESS);
     let f = fresnel(dot(n, v));
     let r = reflect(n, v);
-    // Only the double right under a droplet: the exaggerated waves
-    // would also mirror it in troughs far away.
-    let double = droplet::trace(&scene.droplets, p, r)
-        .filter(|&(t, _)| t < REACH * droplet::RADIUS);
-    // Darkening the mirrored sky too gives the soft contact shadow.
-    let mirror = match double {
-        Some((_, c)) => c,
-        None => add(scale(sky(r), open), scale(KEY_COLOR, specular)),
+    let mirror = match droplet::trace(&scene.droplets, p, r) {
+        Some((t, c)) if t < REACH * droplet::RADIUS => c,
+        _ => add(scale(sky(r), open), scale(KEY_COLOR, specular)),
     };
     add(scale(LIQUID, diffuse * (1.0 - f)), scale(mirror, f))
-}
-
-fn linear(c: Color) -> Vec3 {
-    c.map(|x| (x as f64 / 255.0).powf(2.2))
-}
-
-/// Tone map and gamma encode.
-fn srgb(c: Vec3) -> Color {
-    let tone = |x: f64| 1.0 - (-EXPOSURE * x).exp();
-    c.map(|x| (tone(x).powf(1.0 / 2.2) * 255.0).round() as u8)
-}
-
-/// Sample k of n within a pixel: stratified in x, golden ratio in y.
-fn subpixel(k: usize, n: usize) -> (f64, f64) {
-    let k = k as f64;
-    ((k + 0.5) / n as f64, (0.5 + k * GOLDEN).fract())
 }
 
 fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
@@ -190,6 +153,7 @@ fn trace(scene: &Scene, o: Vec3, d: Vec3) -> Vec3 {
 fn scene(grid: &Grid, positions: &[Vec2]) -> Scene {
     let surface = relief(grid, positions);
     let rest = droplet::RADIUS * (1.0 - droplet::SINK);
+    let linear = |c: Color| c.map(|x| (x as f64 / 255.0).powf(2.2));
     let droplets = positions.iter().zip(DROPLET_COLORS.iter().cycle())
         .map(|(&p, &color)| Droplet {
             center: [p[0], p[1], elevation(&surface, p) + rest],
@@ -197,6 +161,18 @@ fn scene(grid: &Grid, positions: &[Vec2]) -> Scene {
         })
         .collect();
     Scene { surface, droplets }
+}
+
+/// Tone map and gamma encode.
+fn srgb(c: Vec3) -> Color {
+    let tone = |x: f64| 1.0 - (-EXPOSURE * x).exp();
+    c.map(|x| (tone(x).powf(1.0 / 2.2) * 255.0).round() as u8)
+}
+
+/// Sample k of n within a pixel: stratified in x, golden ratio in y.
+fn subpixel(k: usize, n: usize) -> (f64, f64) {
+    let k = k as f64;
+    ((k + 0.5) / n as f64, (0.5 + k * GOLDEN).fract())
 }
 
 /// Oblique view of the grid with droplets at the given positions,
@@ -221,15 +197,15 @@ pub fn render(
     };
     let pixel = |x: f64, y: f64| {
         let c = (0..samples)
-            .map(|i| subpixel(i, samples))
+            .map(|k| subpixel(k, samples))
             .map(|(dx, dy)| trace(&scene, eye, ray(x + dx, y + dy)))
             .fold([0.0; 3], add);
         srgb(scale(c, 1.0 / samples as f64))
     };
     let mut pixels = vec![[0; 3]; width * height];
+    // Rows on demand, as the cores differ in speed and rows in cost.
     let rows = Mutex::new(pixels.chunks_mut(width).enumerate());
     let threads = thread::available_parallelism().map_or(1, |n| n.get());
-    // Rows on demand, as the cores differ in speed and rows in cost.
     thread::scope(|s| {
         for _ in 0..threads {
             s.spawn(|| loop {
