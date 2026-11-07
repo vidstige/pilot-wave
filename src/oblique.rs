@@ -1,4 +1,6 @@
 //! Oblique view: the grid as a lit liquid surface, droplets as spheres.
+use std::thread;
+
 use crate::bath::Vec2;
 use crate::grid::Grid;
 use crate::image::{Color, Image};
@@ -186,7 +188,19 @@ pub fn render(
             .fold([0.0; 3], add);
         srgb(scale(c, 1.0 / samples as f64))
     };
-    let pixels = (0..width * height).map(pixel).collect();
+    let mut pixels = vec![[0; 3]; width * height];
+    let threads = thread::available_parallelism().map_or(1, |n| n.get());
+    let band = height.div_ceil(threads) * width;
+    thread::scope(|s| {
+        for (b, chunk) in pixels.chunks_mut(band).enumerate() {
+            let pixel = &pixel;
+            s.spawn(move || {
+                for (i, c) in chunk.iter_mut().enumerate() {
+                    *c = pixel(b * band + i);
+                }
+            });
+        }
+    });
     Image { width, height, pixels }
 }
 
