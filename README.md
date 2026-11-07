@@ -1,12 +1,13 @@
 # pilot-wave
 
-A small, dependency-free Rust simulation of walking droplets
-(pilot-wave hydrodynamics). It is a stroboscopic path-memory model:
-every bounce leaves a decaying standing wave at the Faraday wavelength,
-the droplet slides down the slope of the sum of all past waves, and a
-memory parameter sets how long the bath remembers. Physical accuracy is
-not the goal; the qualitative quantum-like behaviour is. The Python
-prototype it grew from lives in [prototype/](prototype/README.md).
+A small Rust simulation of walking droplets (pilot-wave hydrodynamics),
+written from scratch with a live viewer built on eframe (egui). It is a
+stroboscopic path-memory model: every bounce leaves a decaying standing
+wave at the Faraday wavelength, the droplet slides down the slope of the
+sum of all past waves, and a memory parameter sets how long the bath
+remembers. Physical accuracy is not the goal; the qualitative
+quantum-like behaviour is. The Python prototype it grew from lives in
+[prototype/](prototype/README.md).
 
 ![A single walker and its wake](images/single_oblique.png)
 
@@ -34,6 +35,22 @@ ffmpeg -framerate 30 -i out/pair_%05d.png pair.mp4
 ```
 
 Tests run with `cargo test --release`.
+
+## Live viewer
+
+```
+cargo run --release --bin live
+```
+
+The side panel picks the scene, the memory (logarithmic, 1 to 400),
+how many bounces to run per frame and the top or oblique view, with
+pause and reset buttons and a readout of the bounce count and frame
+rate. Changing the scene or memory starts over. The bath is sampled
+coarser than the command line renders, on all cores, to keep it fluid;
+long memories still slow it down since every remembered bounce adds a
+wave to evaluate.
+
+![The live viewer](images/live.png)
 
 ## The model
 
