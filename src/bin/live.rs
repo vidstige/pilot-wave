@@ -1,7 +1,10 @@
+use std::env;
+
 use eframe::egui;
-use egui::{ColorImage, TextureHandle, TextureOptions};
-use pilot_wave::rate::Rate;
+use egui::{ColorImage, TextureHandle, TextureOptions, ViewportCommand};
 use pilot_wave::image::Image;
+use pilot_wave::png;
+use pilot_wave::rate::Rate;
 use pilot_wave::live::{Live, View};
 use pilot_wave::scene::{default_memory, SCENES};
 
@@ -10,8 +13,12 @@ const MEMORY_RANGE: (f64, f64) = (1.0, 400.0);
 /// Replay speed in bounces per second.
 const SPEED: f64 = 200.0;
 const SPEED_RANGE: (f64, f64) = (1.0, 3000.0);
+/// Frames to run before `--screenshot <path>` captures the window.
+const SCREENSHOT_FRAME: usize = 120;
 
 struct App {
+    screenshot: Option<String>,
+    frames: usize,
     live: Live,
     speed: f64,
     view: View,
@@ -27,10 +34,12 @@ fn color_image(image: &Image) -> ColorImage {
 }
 
 impl App {
-    fn new(ctx: &egui::Context) -> App {
+    fn new(ctx: &egui::Context, screenshot: Option<String>) -> App {
         let live = Live::new(SCENE, default_memory(SCENE));
         let image = color_image(&live.frame(View::Top));
         App {
+            screenshot,
+            frames: 0,
             live,
             speed: SPEED,
             view: View::Top,
@@ -79,6 +88,28 @@ impl App {
         ));
     }
 
+    /// Ask for the window's pixels at the screenshot frame, then save
+    /// them and quit once they arrive.
+    fn screenshot(&mut self, ctx: &egui::Context) {
+        let Some(path) = &self.screenshot else { return };
+        self.frames += 1;
+        if self.frames == SCREENSHOT_FRAME {
+            ctx.send_viewport_cmd(ViewportCommand::Screenshot(Default::default()));
+        }
+        let shot = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(shot) = shot {
+            let pixels = shot.pixels.iter().map(|c| [c.r(), c.g(), c.b()]).collect();
+            let image = Image { width: shot.size[0], height: shot.size[1], pixels };
+            png::write(path, &image).expect("write screenshot");
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+
     fn picture(&self, ui: &mut egui::Ui) {
         let side = ui.available_size().min_elem();
         let size = egui::vec2(side, side);
@@ -101,14 +132,18 @@ impl eframe::App for App {
         let image = color_image(&self.live.frame(self.view));
         self.texture.set(image, TextureOptions::LINEAR);
         egui::CentralPanel::default_margins().show(ui, |ui| self.picture(ui));
+        self.screenshot(ui.ctx());
         ui.ctx().request_repaint();
     }
 }
 
 fn main() -> eframe::Result {
+    let args: Vec<String> = env::args().collect();
+    let screenshot = (args.get(1).map(String::as_str) == Some("--screenshot"))
+        .then(|| args[2].clone());
     eframe::run_native(
         "pilot-wave",
         eframe::NativeOptions::default(),
-        Box::new(|cc| Ok(Box::new(App::new(&cc.egui_ctx)))),
+        Box::new(|cc| Ok(Box::new(App::new(&cc.egui_ctx, screenshot)))),
     )
 }
