@@ -43,12 +43,17 @@ cargo run --release --bin live
 ```
 
 The side panel picks the scene, the memory (logarithmic, 1 to 400),
-how many bounces to run per frame and the top or oblique view, with
-pause and reset buttons and a readout of the bounce count and frame
-rate. Changing the scene or memory starts over. The bath is sampled
-coarser than the command line renders, on all cores, to keep it fluid;
-long memories still slow it down since every remembered bounce adds a
-wave to evaluate.
+the replay speed in bounces per second (logarithmic, 1 to 3000,
+default 200) and the top or oblique view, with pause and reset
+buttons and a readout of the bounce count, the frame rate and the
+bounces per second actually reached. The speed is kept against the
+wall clock, so it does not depend on the frame rate, and slow speeds
+run a bounce every few frames. A frame plays at most a tenth of a
+second of bounces, so when the simulation cannot keep up the replay
+falls behind the set speed instead of stalling. Changing the scene or
+memory starts over. The bath is sampled coarser than the command line
+renders, on all cores, to keep it fluid; long memories still slow it
+down since every remembered bounce adds a wave to evaluate.
 
 ![The live viewer](images/live.png)
 

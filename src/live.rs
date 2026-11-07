@@ -12,6 +12,9 @@ const OBLIQUE_SAMPLES: usize = 120;
 const OBLIQUE_PIXELS: usize = 360;
 /// One ray per pixel keeps the live oblique view fluid.
 const OBLIQUE_SAMPLES_PER_PIXEL: usize = 1;
+/// Longest frame played in full, in seconds. Beyond it the replay
+/// falls behind rather than catching up, so a stall cannot snowball.
+const MAX_FRAME: f64 = 0.1;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum View {
@@ -23,13 +26,15 @@ pub struct Live {
     pub name: &'static str,
     pub memory: f64,
     pub bounces: usize,
+    /// The fraction of a bounce played but not yet run.
+    owed: f64,
     simulation: Simulation,
 }
 
 impl Live {
     pub fn new(name: &'static str, memory: f64) -> Live {
         let simulation = Simulation::new(scene(name, memory));
-        Live { name, memory, bounces: 0, simulation }
+        Live { name, memory, bounces: 0, owed: 0.0, simulation }
     }
 
     /// Start over if the scene or memory differ from the running ones.
@@ -44,6 +49,17 @@ impl Live {
             self.simulation.bounce();
         }
         self.bounces += bounces;
+    }
+
+    /// Play a frame of dt seconds at speed bounces per second and
+    /// return the bounces run. The fraction of a bounce left over
+    /// carries to the next frame, so slow speeds run every few frames.
+    pub fn play(&mut self, speed: f64, dt: f64) -> usize {
+        self.owed += speed * dt.min(MAX_FRAME);
+        let bounces = self.owed as usize;
+        self.owed -= bounces as f64;
+        self.advance(bounces);
+        bounces
     }
 
     pub fn frame(&self, view: View) -> Image {
@@ -78,6 +94,24 @@ mod tests {
         live.advance(5);
         live.select("trap", 21.0);
         assert_eq!((live.name, live.bounces), ("trap", 0));
+    }
+
+    #[test]
+    fn slow_speeds_run_one_bounce_every_few_frames() {
+        let mut live = Live::new("pair", 20.0);
+        let played: Vec<usize> =
+            (0..64).map(|_| live.play(8.0, 1.0 / 64.0)).collect();
+        assert_eq!(live.bounces, 8);
+        assert!(played.iter().all(|&n| n <= 1));
+    }
+
+    #[test]
+    fn a_stall_plays_like_the_longest_frame() {
+        let mut stalled = Live::new("pair", 20.0);
+        let mut longest = Live::new("pair", 20.0);
+        let n = stalled.play(1000.0, 5.0);
+        assert_eq!(n, longest.play(1000.0, MAX_FRAME));
+        assert_eq!(n, 100);
     }
 
     #[test]

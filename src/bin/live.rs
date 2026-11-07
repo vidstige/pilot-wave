@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use eframe::egui;
 use egui::{ColorImage, TextureHandle, TextureOptions};
 use pilot_wave::fps::Rate;
@@ -9,16 +7,17 @@ use pilot_wave::live::{Live, View, SCENES};
 const SCENE: &str = "pair";
 const MEMORY: f64 = 20.0;
 const MEMORY_RANGE: (f64, f64) = (1.0, 400.0);
-const BOUNCES: usize = 10;
-const MAX_BOUNCES: usize = 200;
+/// Replay speed in bounces per second.
+const SPEED: f64 = 200.0;
+const SPEED_RANGE: (f64, f64) = (1.0, 3000.0);
 
 struct App {
     live: Live,
-    bounces: usize,
+    speed: f64,
     view: View,
     paused: bool,
     fps: Rate,
-    last: Instant,
+    bounce_rate: Rate,
     texture: TextureHandle,
 }
 
@@ -33,11 +32,11 @@ impl App {
         let image = color_image(&live.frame(View::Top));
         App {
             live,
-            bounces: BOUNCES,
+            speed: SPEED,
             view: View::Top,
             paused: false,
             fps: Rate::default(),
-            last: Instant::now(),
+            bounce_rate: Rate::default(),
             texture: ctx.load_texture("frame", image, TextureOptions::LINEAR),
         }
     }
@@ -55,8 +54,9 @@ impl App {
         let slider = egui::Slider::new(&mut memory, range);
         ui.add(slider.logarithmic(true).text("memory"));
         self.live.select(name, memory);
-        let slider = egui::Slider::new(&mut self.bounces, 1..=MAX_BOUNCES);
-        ui.add(slider.text("bounces per frame"));
+        let range = SPEED_RANGE.0..=SPEED_RANGE.1;
+        let slider = egui::Slider::new(&mut self.speed, range);
+        ui.add(slider.logarithmic(true).integer().text("bounces per second"));
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.view, View::Top, "top");
             ui.selectable_value(&mut self.view, View::Oblique, "oblique");
@@ -69,7 +69,11 @@ impl App {
         });
         ui.separator();
         ui.label(format!("bounce {}", self.live.bounces));
-        ui.label(format!("{:.1} fps", self.fps.rate()));
+        ui.label(format!(
+            "{:.1} fps, {:.0} bounces per second",
+            self.fps.rate(),
+            self.bounce_rate.rate()
+        ));
     }
 
     fn picture(&self, ui: &mut egui::Ui) {
@@ -81,13 +85,16 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let now = Instant::now();
-        self.fps.tick(1.0, (now - self.last).as_secs_f64());
-        self.last = now;
+        // We repaint every frame, so egui's stable dt is the wall clock.
+        let dt = ui.ctx().input(|i| i.stable_dt) as f64;
         egui::Panel::left("controls").show(ui, |ui| self.controls(ui));
-        if !self.paused {
-            self.live.advance(self.bounces);
-        }
+        let bounces = if self.paused {
+            0
+        } else {
+            self.live.play(self.speed, dt)
+        };
+        self.fps.tick(1.0, dt);
+        self.bounce_rate.tick(bounces as f64, dt);
         let image = color_image(&self.live.frame(self.view));
         self.texture.set(image, TextureOptions::LINEAR);
         egui::CentralPanel::default_margins().show(ui, |ui| self.picture(ui));
