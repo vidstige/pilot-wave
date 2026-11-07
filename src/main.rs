@@ -25,6 +25,7 @@ const PIXELS: usize = 600;
 const TRAIL: usize = 400;
 const SPRING: f64 = 0.002;
 const CORRAL_RADIUS: f64 = 2.0;
+const HISTOGRAM_BINS: usize = 100;
 const HISTOGRAM_SKIP: usize = 5000;
 
 struct Scene {
@@ -83,7 +84,7 @@ fn frame(scene: &Scene, trails: &[Vec<Vec2>], view: &str, path: &str) {
     let image = match view {
         "top" => {
             let peak = grid.peak();
-            let mut image = topdown::paint(&grid, &colormap::COOLWARM, -peak, peak);
+            let mut image = topdown::paint(&grid, &colormap::COOLWARM, -peak, peak, 1);
             topdown::droplets(&mut image, &grid, trails);
             image
         }
@@ -106,7 +107,7 @@ fn main() {
     let mut scene = scene(name, memory);
     let mut rng = Rng::new(1);
     let mut trails: Vec<Vec<Vec2>> = scene.walkers.positions.iter().map(|p| vec![*p]).collect();
-    let mut histogram = Grid::zeros([0.0; 2], scene.half, PIXELS / 2);
+    let mut histogram = Grid::zeros([0.0; 2], scene.half, HISTOGRAM_BINS);
     for bounce in 1..=bounces {
         step(&mut *scene.bath, &mut scene.walkers, spring(scene.spring), &mut rng);
         confine(&mut scene.walkers, scene.rim);
@@ -123,6 +124,7 @@ fn main() {
             frame(&scene, &trails, view, &format!("{out}/{name}_{:05}.png", bounce / every));
         }
     }
-    let image = topdown::paint(&histogram, &colormap::VIRIDIS, 0.0, histogram.peak());
+    let scale = PIXELS / HISTOGRAM_BINS;
+    let image = topdown::paint(&histogram, &colormap::VIRIDIS, 0.0, histogram.peak(), scale);
     png::write(format!("{out}/{name}_histogram.png"), &image).expect("write histogram");
 }

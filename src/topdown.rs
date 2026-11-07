@@ -7,13 +7,16 @@ use crate::image::{Color, Image};
 pub const DROPLET_RADIUS: f64 = 4.0;
 pub const DROPLET_COLORS: [Color; 2] = [[255, 255, 255], [255, 160, 30]];
 
-/// Paint the grid with values from lo to hi spanning the colormap.
-pub fn paint(grid: &Grid, map: &Colormap, lo: f64, hi: f64) -> Image {
-    let mut image = Image::new(grid.n, grid.n, [0; 3]);
-    for j in 0..grid.n {
-        for i in 0..grid.n {
+/// Paint the grid with values from lo to hi spanning the colormap,
+/// each cell as a square of scale by scale pixels.
+pub fn paint(grid: &Grid, map: &Colormap, lo: f64, hi: f64, scale: usize) -> Image {
+    let side = grid.n * scale;
+    let mut image = Image::new(side, side, [0; 3]);
+    for y in 0..side {
+        for x in 0..side {
+            let (i, j) = (x / scale, grid.n - 1 - y / scale);
             let t = (grid.at(i, j) - lo) / (hi - lo);
-            image.set(i as i64, (grid.n - 1 - j) as i64, sample(map, t));
+            image.set(x as i64, y as i64, sample(map, t));
         }
     }
     image
