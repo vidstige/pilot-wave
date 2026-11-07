@@ -239,8 +239,8 @@ mod tests {
 
     #[test]
     fn disc_shadow_is_symmetric_with_a_bright_axis() {
-        assert!((shadow(1.3) - shadow(-1.3)).abs() < 1e-9 * shadow(1.3));
+        assert!((shadow(1.3, SCREEN) - shadow(-1.3, SCREEN)).abs() < 1e-9 * shadow(1.3, SCREEN));
         let beside = (1..=10).map(|i| shadow(0.2 * i as f64)).fold(f64::MAX, f64::min);
-        assert!(shadow(0.0) > 2.0 * beside);
+        assert!(shadow(0.0, SCREEN) > 2.0 * beside);
     }
 }
