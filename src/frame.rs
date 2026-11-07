@@ -1,5 +1,5 @@
 //! A simulation's current state as an image, in either view.
-use crate::colormap::COOLWARM;
+use crate::colormap::BERLIN;
 use crate::grid::Grid;
 use crate::image::Image;
 use crate::scene::Simulation;
@@ -14,7 +14,7 @@ fn grid(sim: &Simulation, n: usize) -> Grid {
 pub fn top(sim: &Simulation, n: usize) -> Image {
     let grid = grid(sim, n);
     let peak = grid.peak();
-    let mut image = topdown::paint(&grid, &COOLWARM, -peak, peak, 1);
+    let mut image = topdown::paint(&grid, &BERLIN, -peak, peak, 1);
     topdown::droplets(&mut image, &grid, &sim.trails);
     image
 }

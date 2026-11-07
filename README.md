@@ -76,7 +76,7 @@ built into the waves themselves. The droplet bounces off the rim.
 
 ## Views
 
-`topdown.rs` paints the field through matplotlib's coolwarm colormap
+`topdown.rs` paints the field through matplotlib's berlin colormap
 with droplets and trails on top. `oblique.rs` renders the field as a
 lit liquid surface: rays are marched to the heightfield and shaded
 with a key light, a soft fill and a Fresnel reflection of a gradient
