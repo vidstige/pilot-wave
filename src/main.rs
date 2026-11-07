@@ -61,12 +61,19 @@ fn centroid(points: &[Vec2]) -> Vec2 {
     [sum[0] / n, sum[1] / n]
 }
 
-fn frame(field: &Field, scene: &Scene, trails: &[Vec<Vec2>], path: &str) {
+fn frame(field: &Field, scene: &Scene, trails: &[Vec<Vec2>], view: &str, path: &str) {
     let center = if scene.follow { centroid(&scene.walkers.positions) } else { [0.0; 2] };
     let grid = Grid::sample(field, center, scene.half, PIXELS);
-    let peak = grid.peak();
-    let mut image = topdown::paint(&grid, &colormap::COOLWARM, -peak, peak);
-    topdown::droplets(&mut image, &grid, trails);
+    let image = match view {
+        "top" => {
+            let peak = grid.peak();
+            let mut image = topdown::paint(&grid, &colormap::COOLWARM, -peak, peak);
+            topdown::droplets(&mut image, &grid, trails);
+            image
+        }
+        "oblique" => oblique::render(&grid, &scene.walkers.positions, PIXELS, PIXELS),
+        other => panic!("unknown view {other}"),
+    };
     png::write(path, &image).expect("write frame");
 }
 
@@ -77,6 +84,7 @@ fn main() {
     let bounces: usize = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(1200);
     let every: usize = args.get(4).map(|s| s.parse().unwrap()).unwrap_or(bounces);
     let out = args.get(5).map(String::as_str).unwrap_or("out");
+    let view = args.get(6).map(String::as_str).unwrap_or("top");
     std::fs::create_dir_all(out).expect("create output directory");
 
     let mut scene = scene(name);
@@ -100,7 +108,7 @@ fn main() {
             histogram.count(scene.walkers.positions[0]);
         }
         if bounce % every == 0 {
-            frame(&field, &scene, &trails, &format!("{out}/{name}_{:05}.png", bounce / every));
+            frame(&field, &scene, &trails, view, &format!("{out}/{name}_{:05}.png", bounce / every));
         }
     }
     if scene.trap {
