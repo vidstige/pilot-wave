@@ -85,11 +85,10 @@ built into the waves themselves. The droplet bounces off the rim.
 with droplets and trails on top. `oblique.rs` renders the field as a
 lit liquid surface: rays are marched to the heightfield and shaded
 with a key light, a soft fill and a Fresnel reflection of a gradient
-sky. The droplets (`oblique/droplet.rs`) are beads of silicone oil
-resting on the bath: light refracts through them, so they show the
-scene behind them upside down, dark on top with the bright horizon
-at the bottom; they reflect in the surface beneath them, sink into a
-small dimple, darken the contact zone and cast a soft shadow. Stills
+sky. The droplets (`oblique/droplet.rs`) are dark glossy beads of
+silicone oil resting on the bath: they mirror the sky and the key
+light, glow faintly in their colour, reflect in the surface beneath
+them, sink into a small dimple and darken the contact zone. Stills
 use four rays per pixel, the live view one. Colormaps are tables
 sampled from matplotlib by `tools/colormaps.py`.
 
