@@ -58,9 +58,11 @@ impl Particles {
     }
 }
 
+/// The cell holding a position, kept off the outermost ring so the
+/// force stencil has neighbours.
 fn nearest(wave: &Wave, p: Vec2) -> usize {
     let (x, y) = wave.cell(p);
-    let clamp = |c: f64| c.round().clamp(0.0, (wave.n - 1) as f64) as usize;
+    let clamp = |c: f64| c.round().clamp(1.0, (wave.n - 2) as f64) as usize;
     wave.index((clamp(x), clamp(y)))
 }
 
@@ -104,6 +106,15 @@ mod tests {
         }
         let p = particles.positions[0];
         assert!(p[0] < 1.0 && particles.velocities[0][0] < 0.0, "{p:?}");
+    }
+
+    #[test]
+    fn classical_particle_at_the_edge_does_not_panic() {
+        let wave = Wave::new(32, 0.1);
+        let mut particles = Particles::new(Kind::Classical, vec![[-1.6, 1.6], [9.0, -9.0]], [-3.0, 3.0]);
+        for _ in 0..50 {
+            particles.step(&wave, 0.01);
+        }
     }
 
     #[test]
