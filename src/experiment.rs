@@ -2,16 +2,19 @@
 //! kind of particles, a detection line and how long to run. No I/O.
 //!
 //! The packet's wavelength is 1, so k = 2π and the packet speed is 2π.
+//! Two particles on a line are one point (x₁, x₂) in the plane.
 use std::f64::consts::{PI, TAU};
 
 use crate::grid::Vec2;
 use crate::packet::Packet;
+use crate::pair::{self, Orbital, Symmetry};
 use crate::particles::Kind;
 use crate::wave::{stable_dt, Wave};
 
-pub const NAMES: [&str; 11] = [
+pub const NAMES: [&str; 16] = [
     "free", "double-slit", "single-slit", "barrier", "disc", "harmonic", "ground", "vortex",
-    "antivortex", "orbital", "box",
+    "antivortex", "orbital", "box", "fermions", "bosons", "distinguishable", "molecule",
+    "molecule-break",
 ];
 pub const SPEED: f64 = TAU;
 pub const ENERGY: f64 = SPEED * SPEED / 2.0;
@@ -42,6 +45,44 @@ pub const DISC_BEAM: f64 = 8.0;
 pub const TRAP: f64 = 0.5;
 const ORBIT: f64 = 4.0;
 const BOX_HALF: f64 = 6.0;
+/// Two particles on a line |x| ≤ 12.8, whatever the grid asked for.
+const LINE_CELLS: usize = 256;
+/// The colliding packets: where they start, their width and speed.
+const PAIR_START: f64 = 4.0;
+const PAIR_WIDTH: f64 = 1.0;
+const PAIR_SPEED: f64 = 2.0;
+const COLLISION_TIME: f64 = 5.0;
+/// The molecule's Gaussian well U(x₁ − x₂), which binds exactly one
+/// state of the relative motion, 2.8 deep; a second one would need
+/// a well half again as deep.
+pub const BOND_DEPTH: f64 = 6.0;
+pub const BOND_RANGE: f64 = 0.4;
+/// The hard wall on the line, which only particle 1 feels: a wall
+/// both feel is a right-angled corner in configuration space, which
+/// reflects the pair like a corner reflector, mirroring the relative
+/// motion so that the bond survives any kick. Then where the molecule
+/// starts, the widths of its centre and of its separation before
+/// relaxing, and how long it relaxes in imaginary time.
+pub const LINE_WALL: f64 = 5.0;
+const MOLECULE_START: f64 = -2.0;
+const MOLECULE_WIDTH: [f64; 2] = [1.0, 0.5];
+const RELAX_TIME: f64 = 4.0;
+/// Total wavenumbers of the gentle and the hard kick, and how long
+/// each runs. Particle 1 bouncing alone gives the relative motion
+/// the pair's kinetic energy k²/4, which breaks the bond once it
+/// passes the binding energy.
+pub const KICK: f64 = 2.0;
+pub const BREAK_KICK: f64 = 5.0;
+const MOLECULE_TIME: f64 = 15.0;
+const BREAK_TIME: f64 = 6.0;
+
+/// Where the experiment's particles live: one particle in the plane,
+/// or two on a line, the grid then being their configuration space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Space {
+    Plane,
+    Line,
+}
 
 pub struct Experiment {
     pub name: &'static str,
@@ -54,6 +95,9 @@ pub struct Experiment {
     pub screen: Option<f64>,
     /// The starting density's peak, the reference for brightness.
     pub peak: f32,
+    /// For a line, `packet` holds the two particles' packets as one
+    /// in configuration space.
+    pub space: Space,
 }
 
 fn upward(center: Vec2, width: Vec2) -> Packet {
@@ -118,6 +162,65 @@ fn slits(centers: &[f64], width: f64) -> impl Fn(Vec2) -> bool + '_ {
     move |p| in_wall(p) && !centers.iter().any(|c| (p[0] - c).abs() < width / 2.0)
 }
 
+/// Two packets heading for each other.
+fn collision(wave: &mut Wave, symmetry: Symmetry) -> Packet {
+    let (x, k) = (PAIR_START, PAIR_SPEED);
+    let a = Orbital { center: -x, width: PAIR_WIDTH, wavenumber: k };
+    let b = Orbital { center: x, width: PAIR_WIDTH, wavenumber: -k };
+    pair::write(wave, a, b, symmetry);
+    Packet { center: [-x, x], width: [PAIR_WIDTH; 2], wavevector: [k, -k] }
+}
+
+pub fn bond(r: f64) -> f64 {
+    -BOND_DEPTH * (-r * r / (2.0 * BOND_RANGE * BOND_RANGE)).exp()
+}
+
+/// Standard deviation of x₁.
+fn marginal_width(wave: &Wave) -> f64 {
+    let [m, _] = pair::marginals(wave);
+    let x = |i: usize| wave.position((i, 0))[0];
+    let moment = |p| wave.dx * (0..wave.n).map(|i| m[i] * x(i).powi(p)).sum::<f64>();
+    (moment(2) - moment(1).powi(2)).sqrt()
+}
+
+/// The bound pair in the ground state of its relative motion, a
+/// Gaussian in its centre, kicked towards particle 1's wall with
+/// total wavenumber k. The packet is either particle's, centred on the pair.
+fn molecule(wave: &mut Wave, dt: f64, k: f64) -> Packet {
+    pair::interaction(wave, bond);
+    wall(wave, |p| p[0] > LINE_WALL);
+    let [w, s] = MOLECULE_WIDTH;
+    pair::fill(wave, |x1, x2| {
+        let (c, r) = ((x1 + x2) / 2.0 - MOLECULE_START, x1 - x2);
+        [(-c * c / (4.0 * w * w) - r * r / (4.0 * s * s)).exp(), 0.0]
+    });
+    pair::relax(wave, dt, (RELAX_TIME / dt) as usize);
+    pair::kick(wave, k);
+    let width = marginal_width(wave);
+    let center = [MOLECULE_START; 2];
+    Packet { center, width: [width; 2], wavevector: [k / 2.0; 2] }
+}
+
+/// Two particles on a line, any wall set after the sponge so the
+/// sponge leaves it whole.
+fn line(name: &'static str, kind: Kind) -> Experiment {
+    let mut wave = Wave::new(LINE_CELLS, DX);
+    let dt = stable_dt(DX, BOND_DEPTH);
+    wave.absorb_edges(dt);
+    let (packet, duration) = match name {
+        "fermions" => (collision(&mut wave, Symmetry::Fermions), COLLISION_TIME),
+        "bosons" => (collision(&mut wave, Symmetry::Bosons), COLLISION_TIME),
+        "distinguishable" => {
+            (collision(&mut wave, Symmetry::Distinguishable), COLLISION_TIME)
+        }
+        "molecule" => (molecule(&mut wave, dt, KICK), MOLECULE_TIME),
+        _ => (molecule(&mut wave, dt, BREAK_KICK), BREAK_TIME),
+    };
+    let space = Space::Line;
+    let peak = wave.peak();
+    Experiment { name, wave, packet, kind, dt, duration, screen: None, peak, space }
+}
+
 pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
     let mut wave = Wave::new(n, DX);
     let half = wave.extent() / 2.0;
@@ -159,6 +262,9 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
             wall(&mut wave, |p| p[0].abs() > BOX_HALF || p[1].abs() > BOX_HALF);
             (Packet { center: [-3.0, 0.0], width: [1.0, 1.0], wavevector: [SPEED / 2.0, SPEED / 4.0] }, 0.0, None)
         }
+        "fermions" | "bosons" | "distinguishable" | "molecule" | "molecule-break" => {
+            return line(name, kind)
+        }
         other => panic!("unknown experiment {other}"),
     };
     let dt = stable_dt(DX, potential_max);
@@ -178,7 +284,7 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
         _ => (screen_y - start + TAIL) / SPEED,
     };
     let peak = wave.peak();
-    Experiment { name, wave, packet, kind, dt, duration, screen, peak }
+    Experiment { name, wave, packet, kind, dt, duration, screen, peak, space: Space::Plane }
 }
 
 /// Fraunhofer intensity for slits of the given width at the given
@@ -281,5 +387,13 @@ mod tests {
         assert!((shadow(1.3, SCREEN) - shadow(-1.3, SCREEN)).abs() < 1e-9 * shadow(1.3, SCREEN));
         let beside = (1..=10).map(|i| shadow(0.2 * i as f64, SCREEN)).fold(f64::MAX, f64::min);
         assert!(shadow(0.0, SCREEN) > 2.0 * beside);
+    }
+
+    #[test]
+    fn molecule_starts_bound_with_the_kick_on_top() {
+        let e = experiment("molecule", 0, Kind::Quantum);
+        // The relative motion's one bound state is 2.82 deep.
+        let relative = pair::energy(&e.wave) - KICK * KICK / 4.0;
+        assert!((-2.9..-2.6).contains(&relative), "{relative}");
     }
 }

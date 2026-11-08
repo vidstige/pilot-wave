@@ -30,6 +30,12 @@ impl Image {
     }
 }
 
+/// One image over another of the same width.
+pub fn stack(top: &Image, bottom: &Image) -> Image {
+    let pixels = [&top.pixels[..], &bottom.pixels[..]].concat();
+    Image { width: top.width, height: top.height + bottom.height, pixels }
+}
+
 /// Linear blend of two colors, t in 0..1.
 pub fn mix(a: Color, b: Color, t: f64) -> Color {
     let lerp = |x: u8, y: u8| (x as f64 + (y as f64 - x as f64) * t).round() as u8;

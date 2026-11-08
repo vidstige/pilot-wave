@@ -1,6 +1,8 @@
 //! The live viewer's running experiment and its pictures, free of UI.
+use std::f64::consts::TAU;
+
 use crate::experiment::{
-    experiment, fraunhofer, Experiment, SINGLE_SLIT_WIDTH, SLIT_SEPARATION, SLIT_WIDTH,
+    experiment, fraunhofer, Experiment, Space, SINGLE_SLIT_WIDTH, SLIT_SEPARATION, SLIT_WIDTH,
 };
 use crate::grid::Vec2;
 use crate::image::{Color, Image};
@@ -28,6 +30,8 @@ const LEGEND: [(&str, Color); 3] = [
     ("current", [80, 200, 255]),
     ("Fraunhofer", [255, 160, 30]),
 ];
+/// The line view's particles, under the field of two on a line.
+const LINE_LEGEND: [(&str, Color); 2] = [("particle 1", view::ONE), ("particle 2", view::TWO)];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum View {
@@ -149,6 +153,10 @@ impl Live {
         let heads: Vec<Vec<Vec2>> =
             self.particles.positions.iter().map(|p| vec![*p]).collect();
         view::particles(&mut image, wave, &heads);
+        if let (Space::Line, Some(p)) = (self.experiment.space, heads.first()) {
+            view::diagonal(&mut image);
+            view::run(&mut image, wave, p);
+        }
         image
     }
 
@@ -160,8 +168,14 @@ impl Live {
     }
 
     /// Arrivals, integrated current and, for slits, the Fraunhofer
-    /// curve, if there is a screen.
+    /// curve, if there is a screen; for two particles, the line.
     pub fn plot(&self, width: usize, height: usize) -> Option<Image> {
+        let e = &self.experiment;
+        if e.space == Space::Line {
+            let peak = 1.0 / (TAU.sqrt() * e.packet.width[0]);
+            let points = &self.particles.positions;
+            return Some(view::line(&e.wave, points, width, height, peak));
+        }
         let screen = self.screen.as_ref()?;
         let theory = self.theory(screen);
         let color = |k: usize| LEGEND[k].1;
@@ -173,6 +187,9 @@ impl Live {
 
     /// Names and colours of the plotted curves.
     pub fn legend(&self) -> &'static [(&'static str, Color)] {
+        if self.experiment.space == Space::Line {
+            return &LINE_LEGEND;
+        }
         match (&self.screen, slits(self.setup.name)) {
             (None, _) => &[],
             (Some(_), None) => &LEGEND[..2],
@@ -260,6 +277,19 @@ mod tests {
         for b in 0..BINS {
             assert!((theory[b] - theory[BINS - 1 - b]).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn two_particles_draw_their_line_under_the_field() {
+        let mut live = advanced("fermions", 5);
+        assert!(live.screen.is_none());
+        let line = live.plot(64, 32).unwrap();
+        assert_eq!((line.width, line.height), (64, 32));
+        assert_eq!(live.legend().len(), 2);
+        let before = live.frame(View::Phase).pixels;
+        live.advance(200);
+        assert_ne!(before, live.frame(View::Phase).pixels);
+        assert_ne!(line.pixels, live.plot(64, 32).unwrap().pixels);
     }
 
     #[test]

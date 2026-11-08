@@ -2,6 +2,7 @@
 screen plots. Run the experiments into out/<name> first (see README)."""
 from __future__ import annotations
 
+import os
 import sys
 from typing import Tuple
 
@@ -10,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
 
 # Python 3.8 has no builtin generics at runtime.
 Box = Tuple[float, float, float, float]
@@ -24,6 +26,8 @@ FLUX = "#2a78d6"
 THEORY = "#eb6834"
 CLASSICAL = "#1baf7a"
 DPI = 100
+# Figures larger than this in bytes get a 256-colour palette.
+LIMIT = 400_000
 # Domain side of the 1024 and 256 grids at dx = 0.1.
 LARGE = 102.4
 SMALL = 25.6
@@ -186,6 +190,65 @@ def barrier() -> plt.Figure:
     return figure
 
 
+def pair_frame(ax, path: str, reach: tuple[float, float], title: str):
+    """Configuration space over the line view, both cut to x in reach."""
+    image = plt.imread(path)
+    n = image.shape[1]
+    field, line = image[:n], image[n:]
+    px = lambda v: int(round((v + SMALL / 2) / SMALL * n))
+    a, b = map(px, reach)
+    ax.imshow(np.vstack([field[n - b:n - a, a:b], line[:, a:b]]))
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def trails(ax, run: str, reach: tuple[float, float], title: str):
+    x0, x1 = reach
+    show(ax, f"{OUT}/{run}/{run}_trajectories.png", SMALL, (x0, x1, x0, x1), title)
+    ax.set_xlabel("x₁")
+    ax.set_ylabel("x₂")
+
+
+def fermions() -> plt.Figure:
+    figure = plt.figure(figsize=(11, 8.4), layout="constrained")
+    top, bottom = figure.subfigures(2, 1, height_ratios=[1.25, 1])
+    reach = (-8, 8)
+    for ax, i in zip(top.subplots(1, 4), [0, 3, 4, 6]):
+        pair_frame(ax, f"{OUT}/fermions/fermions_{i:04}.png", reach, f"fermions, t = {i / 2:g}")
+    for ax, run in zip(bottom.subplots(1, 3), ["distinguishable", "bosons", "fermions"]):
+        trails(ax, run, reach, f"{run}: 300 runs")
+    return figure
+
+
+def separations(path: str) -> np.ndarray:
+    """Rows of time, mean and spread of the separation in a summary."""
+    rows = [line.split("t =")[1] for line in open(path) if " t = " in line]
+    return np.array([[float(w.strip(",")) for w in r.split() if w[0].isdigit()] for r in rows])
+
+
+def molecule() -> plt.Figure:
+    figure = plt.figure(figsize=(11, 11.5), layout="constrained")
+    top, middle, bottom = figure.subfigures(3, 1, height_ratios=[1.2, 1.2, 0.8])
+    for ax, i in zip(top.subplots(1, 4), [0, 12, 15, 26]):
+        path = f"{OUT}/molecule/molecule_{i:04}.png"
+        pair_frame(ax, path, (-9, 6), f"molecule, t = {i / 2:g}")
+    for ax, i in zip(middle.subplots(1, 4), [4, 6, 8, 12]):
+        path = f"{OUT}/molecule-break/molecule-break_{i:04}.png"
+        pair_frame(ax, path, (-12.8, 12.8), f"kicked harder, t = {i / 2:g}")
+    ax = bottom.subplots()
+    for run, color in [("molecule", FLUX), ("molecule-break", THEORY)]:
+        t, mean, spread = separations(f"{OUT}/{run}-many/summary.txt").T
+        ax.plot(t, mean, color=color, lw=2, label=f"{run}: mean |x₁ − x₂|")
+        ax.fill_between(t, mean - spread, mean + spread, color=color, alpha=0.2, lw=0)
+    ax.set_xlabel("t")
+    ax.set_ylabel("separation over 20000 runs")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    return figure
+
+
 FIGURES = {
     "double-slit": lambda: comparison("double-slit", "Fraunhofer", (-36, 36, -25, 45), 40),
     "disc": lambda: comparison("disc", "Fresnel (Kirchhoff)", (-30, 30, -25, 40), 25),
@@ -196,8 +259,16 @@ FIGURES = {
     "vortex": vortex,
     "box": lambda: frames("box", "box", [1, 3, 5, 8], SMALL, (-6.5, 6.5, -6.5, 6.5)),
     "free": lambda: frames("free", "free", [1, 4, 8, 12], LARGE, (-12, 12, -24, 24)),
+    "fermions": fermions,
+    "molecule": molecule,
 }
+
+def save(figure: plt.Figure, path: str):
+    figure.savefig(path, dpi=DPI)
+    if os.path.getsize(path) > LIMIT:
+        Image.open(path).convert("RGB").quantize(256).save(path, optimize=True)
+
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or FIGURES:
-        FIGURES[name]().savefig(f"{IMAGES}/{name}.png", dpi=DPI)
+        save(FIGURES[name](), f"{IMAGES}/{name}.png")

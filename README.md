@@ -278,3 +278,123 @@ integrated current and the theory as they build up. `live --screenshot
 images/live.png` runs for two seconds, saves the window and quits.
 
 ![The live viewer](images/live.png)
+
+## Two particles in one dimension
+
+Two particles on a line have one wavefunction ψ(x₁, x₂), which lives on
+the same square grid as before: with unit masses the Laplacian in
+(x₁, x₂) is the kinetic energy of both particles, so the solver steps
+it unchanged. The Bohmian system is one point (x₁, x₂) in this
+configuration space moving with the guiding velocity; its two
+coordinates are the two particles' positions on the line. Each sampled
+point is one run of the experiment, drawn from |ψ|² on the grid, and
+the ensemble gives the statistics. An interaction is a potential
+U(x₁ − x₂) across the plane, a trap would be V(x₁) + V(x₂), and the
+statistics of the particles are set by the initial state alone:
+symmetric under x₁ ↔ x₂ for bosons, antisymmetric for fermions,
+neither for distinguishable particles.
+
+```
+mkdir -p out/fermions
+cargo run --release -- fermions 2000 out/fermions | tee out/fermions/summary.txt
+```
+
+The experiments are `fermions`, `bosons`, `distinguishable`,
+`molecule` and `molecule-break`, all on a 256² grid of cells 0.1 wide
+(the line |x| ≤ 12.8, whatever grid is asked for) with the sponge at
+the ends. A frame shows configuration space, x₁ across and x₂ up, with
+the diagonal x₁ = x₂ dotted, and under it the line itself: the two
+marginal densities as bands, x₁ of every run as a row of orange dots
+and x₂ as a row of blue ones, and in pink the first run, the one to
+follow. For identical particles the two marginals coincide, since the
+labels carry no meaning. The runs report the fraction of runs that
+ever crossed the diagonal, the closest the two particles came, and the
+most probability ever found within 0.5 of the diagonal against the
+most runs; the molecules report their separation over time. The
+figures use runs of 2000 into `out/<experiment>` and runs of 20000
+into `out/molecule-many` and `out/molecule-break-many`.
+
+### Pauli exclusion from a node
+
+Two packets 1 wide start at x = ∓4 and head for each other at k = ±2,
+free, as the product a(x₁)b(x₂) (distinguishable), or as
+a(x₁)b(x₂) ± b(x₁)a(x₂) (bosons and fermions). In configuration space
+that is one packet, or two mirrored across the diagonal, moving
+towards it. The antisymmetric ψ vanishes on the whole diagonal, and
+that node is all there is to Pauli exclusion here: no force acts,
+yet the probability of finding the fermions together is zero and the
+guiding velocity turns every run back before it gets there.
+
+![Fermions: frames and trails, against bosons and distinguishable particles](images/fermions.png)
+
+The top row shows the fermions: the two mirrored packets meet at the
+diagonal at t ≈ 2 in fringes parallel to it, with a dark node along
+it, and leave again. Below are 300 trails of each kind over the
+time-integrated density. Distinguishable particles pass straight
+through each other: 0.999 of the runs cross the diagonal, the rest
+being the slowest tail of the packet still on its way at t = 5.
+Fermion runs bounce off the diagonal: none of 2000 crosses, the
+closest approach is 0.013 and half the runs never come within 1.10.
+Boson runs do not cross either, since a symmetric ψ guides mirrored
+points in mirrored ways and the diagonal is a trajectory of its own,
+but they reach it, the density being largest there: the closest
+approach is 0.0003. Their median closest approach is 1.44, further
+than the fermions', because the interference fringes beside the
+diagonal (nodes at |x₁ − x₂| = π/4, 3π/4, …) turn most runs back
+before they get to the bright one in the middle.
+
+The probability of the particles being within 0.5 of each other peaks
+at t ≈ 1.9 at 0.108 for fermions, 0.195 for distinguishable particles
+and 0.284 for bosons: antibunching and bunching, 0.56 and 1.46 times
+the distinguishable value. Free propagation of the relative motion in
+closed form gives 0.109, 0.197 and 0.287. The runs agree with the
+field: of 20000, 0.114, 0.200 and 0.288 at their peaks.
+
+Of 20000 fermion runs, two crossed the diagonal, and the closest
+approach was 4·10⁻⁶. That is numerical. The node lies along
+the cells (i, i) themselves, and the velocity, interpolated between
+four cells two of which sit on the node, has a gradient across the
+diagonal that grows without bound towards those cells; a substep that
+lands there can step over.
+
+### A molecule
+
+An attractive well U = −U₀ exp(−(x₁−x₂)²/(2w²)) with U₀ = 6 and
+w = 0.4 binds exactly one state of the relative motion (reduced mass
+1/2), 2.82 deep; a second one would need a well about 9 deep. The
+molecule starts as a Gaussian in its centre (width 1) and in its
+separation, relaxed for an imaginary time of 4 by ψ ← ψ − dτ H ψ with
+renormalisation, which leaves the relative motion in its bound state
+(energy −2.79, the rest being the centre's spread) and the centre a
+Gaussian 1.4 wide. Multiplying by e^{ik(x₁+x₂)/2} then gives the pair
+total momentum k, kinetic energy k²/4, and sends it along the diagonal
+towards a hard wall at x = 5.
+
+The wall is one only particle 1 feels. A wall both particles feel is
+a right-angled corner in configuration space, x₁ < 5 and x₂ < 5, and a
+corner reflects the way a corner reflector does: it reverses the
+centre's motion and mirrors the relative motion, x₁ − x₂ → x₂ − x₁,
+leaving the bound state as it was. With such a wall kicks of k = 5
+and 6 left 0.0003 and 0.0011 of the probability apart. With the wall on
+particle 1 alone, particle 1 bounces while particle 2 keeps going, and
+the relative motion takes up the pair's kinetic energy k²/4.
+
+![Molecule bouncing off the wall as a pair, and breaking up when kicked harder](images/molecule.png)
+
+With k = 2 (k²/4 = 1.0, a third of the binding energy) the pair
+bounces as a pair. On its way in and out the wave makes a standing
+wave of the centre against the wall, which shows as blobs along the
+diagonal, while the separation stays put: over 20000 runs it is
+0.393 ± 0.335 at the start, dips to 0.388 ± 0.331 during the bounce
+and is 0.397 ± 0.345 at t = 15. At the end 0.0004 of the runs are more
+than 3 apart, against 0.0001 of the probability.
+
+With k = 5 (k²/4 = 6.25, 2.2 times the binding energy) the bond breaks:
+particle 1 turns at the wall, particle 2 runs through it, and the
+outgoing part of the wave is a ring of dissociated pairs around the
+bound part that still bounces back along the diagonal. The separation
+climbs from 0.39 to 9.4 ± 5.2 by t = 6. Of 20000 runs, 0.846 end more
+than 3 apart; in the field 0.649 of the probability is apart and the
+sponge has taken 0.199, all of it fragments flying off, 0.848 in all.
+The remaining 0.15 stays bound even though the kick carried more than
+twice the binding energy.
