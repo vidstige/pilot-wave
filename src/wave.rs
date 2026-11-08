@@ -7,6 +7,12 @@
 //! 1991), which keeps the scheme explicit and stable while
 //! dt < 2 / (max kinetic + max potential). Hard walls are cells kept
 //! at zero; an absorbing sponge at the edges swallows what reaches it.
+//!
+//! A flux line of half a flux quantum is a branch cut: ψ is continuous
+//! everywhere but changes sign across a half line from the flux point
+//! to the edge, the gauge in which the vector potential vanishes off
+//! the cut. Every stencil reach across the cut flips the sign of what
+//! it reads.
 use std::sync::Mutex;
 use std::thread;
 
@@ -28,6 +34,14 @@ const CELLS_PER_THREAD: usize = 1 << 16;
 /// against 0.48 ms with one band per thread.
 const BANDS_PER_THREAD: usize = 2;
 
+/// A vertical cut between columns `column` and `column + 1` on rows
+/// `from_row` and up; the flux point is at its lower end.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cut {
+    pub column: usize,
+    pub from_row: usize,
+}
+
 pub struct Wave {
     pub n: usize,
     pub dx: f64,
@@ -37,6 +51,7 @@ pub struct Wave {
     /// Per-cell survival factor applied each step: 0 in walls, below
     /// 1 in the sponge, 1 elsewhere.
     pub keep: Vec<f32>,
+    pub cut: Option<Cut>,
     /// Steps taken so far times dt.
     pub time: f64,
 }
@@ -48,7 +63,8 @@ pub fn stable_dt(dx: f64, potential_max: f64) -> f64 {
 }
 
 /// One interior row of f ← (f + c H g) keep, given the five rows of g
-/// centred on it. H g is zero on the outer two cells at each end.
+/// centred on it, and the column left of a cut through the row, if
+/// any. H g is zero on the outer two cells at each end.
 fn update_row(
     f: &mut [f32],
     g: [&[f32]; 5],
@@ -56,6 +72,7 @@ fn update_row(
     keep: &[f32],
     c: f32,
     inv: f32,
+    cut: Option<usize>,
 ) {
     // c H folded into weights for the symmetric stencil, with fused
     // multiply-adds: 11 flops a cell instead of 23. Measured on an M1,
@@ -70,6 +87,14 @@ fn update_row(
         let centre = c.mul_add(potential[i], 2.0 * w2);
         let stepped = w1.mul_add(inner, centre.mul_add(m[i], f[i]));
         f[i] = w0.mul_add(outer, stepped) * keep[i];
+    }
+    // The loop added the terms reaching across the cut with the wrong
+    // sign; take them off twice.
+    if let Some(i) = cut {
+        for (l, r, w) in [(i - 1, i + 1, w0), (i, i + 1, w1), (i, i + 2, w0)] {
+            f[l] -= 2.0 * w * m[r] * keep[l];
+            f[r] -= 2.0 * w * m[l] * keep[r];
+        }
     }
     for i in [0, 1, n - 2, n - 1] {
         f[i] *= keep[i];
@@ -102,6 +127,7 @@ struct Lattice<'a> {
     inv: f32,
     potential: &'a [f32],
     keep: &'a [f32],
+    cut: Option<Cut>,
 }
 
 impl Lattice<'_> {
@@ -116,7 +142,9 @@ impl Lattice<'_> {
         } else {
             let rows = [0, 1, 2, 3, 4].map(|o| g.row(n, j + o - 2));
             let potential = &self.potential[j * n..][..n];
-            update_row(f, rows, potential, keep, c, self.inv);
+            let cut = self.cut.filter(|cut| j >= cut.from_row);
+            let cut = cut.map(|cut| cut.column);
+            update_row(f, rows, potential, keep, c, self.inv, cut);
         }
     }
 }
@@ -173,6 +201,7 @@ impl Wave {
             im: vec![0.0; n * n],
             potential: vec![0.0; n * n],
             keep: vec![1.0; n * n],
+            cut: None,
             time: 0.0,
         }
     }
@@ -195,6 +224,14 @@ impl Wave {
 
     pub fn index(&self, (i, j): Index) -> usize {
         j * self.n + i
+    }
+
+    /// Half a flux quantum at the cell corner nearest p, its cut
+    /// running up to the top edge.
+    pub fn flux_line(&mut self, p: Vec2) {
+        let (x, y) = self.cell(p);
+        let (column, from_row) = ((x - 0.5).round(), (y + 0.5).round());
+        self.cut = Some(Cut { column: column as usize, from_row: from_row as usize });
     }
 
     /// Sponge factors near the edges, left at 1 for a hard wall edge.
@@ -227,17 +264,32 @@ impl Wave {
         sum * self.dx * self.dx
     }
 
+    /// What the x gradient's sum at cell k misses for the cells across
+    /// the cut, which count with the opposite sign.
+    fn across(&self, f: &[f32], k: usize, cut: Cut) -> f32 {
+        let (i, j) = (k % self.n, k / self.n);
+        let right = |i: usize| i > cut.column;
+        let crosses = |l: usize| j >= cut.from_row && right(l % self.n) != right(i);
+        let reach = [(k - 2, 1.0), (k - 1, -8.0), (k + 1, 8.0), (k + 2, -1.0)];
+        reach.iter().filter(|(l, _)| crosses(*l)).map(|(l, w)| -2.0 * w * f[*l]).sum()
+    }
+
     /// Probability current Im(ψ* ∇ψ) and density |ψ|² at a cell, the
     /// gradient from a fourth order difference so a plane wave at ten
     /// cells per wavelength comes out within 0.3%.
     fn current(&self, k: usize) -> (Vec2, f64) {
-        let n = self.n;
+        let (n, h) = (self.n, 12.0 * self.dx);
         let grad = |f: &[f32], s: usize| {
-            (f[k - 2 * s] - 8.0 * f[k - s] + 8.0 * f[k + s] - f[k + 2 * s]) as f64 / (12.0 * self.dx)
+            (f[k - 2 * s] - 8.0 * f[k - s] + 8.0 * f[k + s] - f[k + 2 * s]) as f64 / h
         };
+        // A correction rather than a sign on every term keeps the
+        // guidance as fast as before the cut: the 2000 particle ground
+        // run takes 6.8 s either way, 7.3 s with signs multiplied in.
+        let flip = |f: &[f32]| self.cut.map_or(0.0, |c| self.across(f, k, c)) as f64 / h;
         let (r, i) = (self.re[k] as f64, self.im[k] as f64);
         let along = |s| r * grad(&self.im, s) - i * grad(&self.re, s);
-        ([along(1), along(n)], r * r + i * i)
+        let x = along(1) + r * flip(&self.im) - i * flip(&self.re);
+        ([x, along(n)], r * r + i * i)
     }
 
     /// Guiding velocity, the current over the density, each
@@ -272,6 +324,7 @@ impl Wave {
             inv: 1.0 / (self.dx * self.dx) as f32,
             potential: &self.potential,
             keep: &self.keep,
+            cut: self.cut,
         };
         let cores = thread::available_parallelism().map_or(1, |t| t.get());
         let threads = (n * n / CELLS_PER_THREAD).clamp(1, cores);
@@ -300,6 +353,7 @@ impl Wave {
         });
         self.time += dt as f64;
     }
+
 }
 
 #[cfg(test)]
@@ -338,13 +392,17 @@ mod tests {
     fn plain_hamiltonian(wave: &Wave, f: &[f32]) -> Vec<f32> {
         let n = wave.n;
         let inv = 1.0 / (wave.dx * wave.dx) as f32;
+        let across = |i: usize, l: usize, j: usize| {
+            wave.cut.is_some_and(|c| j >= c.from_row && (i <= c.column) != (l <= c.column))
+        };
         let cell = |k: usize| {
             let (i, j) = (k % n, k / n);
             if i < 2 || j < 2 || i >= n - 2 || j >= n - 2 {
                 return 0.0;
             }
+            let sign = |o: usize| if across(i, i + o - 2, j) { -1.0 } else { 1.0 };
             let lap: f32 = (0..5)
-                .map(|o| STENCIL[o] * (f[k + o - 2] + f[k + o * n - 2 * n]))
+                .map(|o| STENCIL[o] * (sign(o) * f[k + o - 2] + f[k + o * n - 2 * n]))
                 .sum();
             -0.5 * lap * inv + wave.potential[k] * f[k]
         };
@@ -365,9 +423,11 @@ mod tests {
     }
 
     /// A packet heading for a potential bump and a wall, with a
-    /// sponge, on a grid that splits unevenly among the cores.
+    /// sponge and a cut through the packet's upper half, on a grid
+    /// that splits unevenly among the cores.
     fn obstacle_course() -> Wave {
         let mut wave = Wave::new(101, DX);
+        wave.cut = Some(Cut { column: 30, from_row: 50 });
         packet().write(&mut wave);
         wave.absorb_edges(stable_dt(DX, 10.0));
         for j in 30..70 {
@@ -392,6 +452,76 @@ mod tests {
         for (a, b) in parts {
             let worst = a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max);
             assert!(worst < 1e-5, "{worst}");
+        }
+    }
+
+    /// ψ with the sign of every cell right of the cut's column flipped.
+    fn flip_right(wave: &mut Wave, column: usize) {
+        for k in 0..wave.n * wave.n {
+            if k % wave.n > column {
+                wave.re[k] = -wave.re[k];
+                wave.im[k] = -wave.im[k];
+            }
+        }
+    }
+
+    #[test]
+    fn cut_through_the_whole_grid_is_a_change_of_gauge() {
+        let column = 60;
+        let mut cut = free_wave();
+        cut.cut = Some(Cut { column, from_row: 0 });
+        let mut plain = free_wave();
+        flip_right(&mut plain, column);
+        let dt = stable_dt(DX, 0.0);
+        for _ in 0..200 {
+            cut.step(dt);
+            plain.step(dt);
+        }
+        flip_right(&mut plain, column);
+        let parts = [(&cut.re, &plain.re), (&cut.im, &plain.im)];
+        for (a, b) in parts {
+            let worst = a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max);
+            assert!(worst < 1e-5, "{worst}");
+        }
+    }
+
+    const PLANE: Vec2 = [2.0, 1.0];
+
+    fn plane_wave(cut: Option<Cut>) -> Wave {
+        let mut wave = Wave::new(32, DX);
+        wave.cut = cut;
+        for k in 0..wave.n * wave.n {
+            let p = wave.position((k % wave.n, k / wave.n));
+            let phase = PLANE[0] * p[0] + PLANE[1] * p[1];
+            (wave.re[k], wave.im[k]) = (phase.cos() as f32, phase.sin() as f32);
+        }
+        wave
+    }
+
+    /// Cells of a 32² grid off its outer two rings.
+    fn interior() -> impl Iterator<Item = usize> {
+        let inside = |i: usize| (2..30).contains(&i);
+        (0..32 * 32).filter(move |k| inside(k % 32) && inside(k / 32))
+    }
+
+    #[test]
+    fn plane_wave_current_is_unchanged_away_from_the_cut() {
+        let wave = plane_wave(Some(Cut { column: 15, from_row: 16 }));
+        let plain = plane_wave(None);
+        let beside = |k: &usize| (14..18).contains(&(k % 32)) && k / 32 >= 16;
+        for k in interior().filter(|k| !beside(k)) {
+            assert_eq!(wave.current(k), plain.current(k));
+        }
+    }
+
+    #[test]
+    fn current_reads_through_the_cut() {
+        let column = 15;
+        let (mut wave, plain) = (plane_wave(Some(Cut { column, from_row: 0 })), plane_wave(None));
+        flip_right(&mut wave, column);
+        for k in interior() {
+            let ((a, _), (b, _)) = (wave.current(k), plain.current(k));
+            assert!((a[0] - b[0]).abs() + (a[1] - b[1]).abs() < 1e-6, "{a:?} {b:?}");
         }
     }
 
