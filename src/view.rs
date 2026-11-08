@@ -68,13 +68,6 @@ pub fn pixel(wave: &Wave, pixels: usize, p: Vec2) -> (i64, i64) {
     (((p[0] + half) * s) as i64, ((half - p[1]) * s) as i64)
 }
 
-/// The diagonal x₁ = x₂ of a configuration space, dotted.
-pub fn diagonal(image: &mut Image) {
-    for t in (0..image.width).step_by(4) {
-        image.set(t as i64, (image.width - 1 - t) as i64, WALL);
-    }
-}
-
 pub fn particles(image: &mut Image, wave: &Wave, trails: &[Vec<Vec2>]) {
     for trail in trails {
         for p in trail {

@@ -7,14 +7,13 @@
 //! names the particle and the SI length of one unit, from which the
 //! units of time, energy and speed follow.
 //!
-//! The grid is either the plane one particle moves in, or the
-//! configuration space (x₁, x₂) of two particles on a line, which the
-//! solver steps the same way since with unit masses the Laplacian is
-//! both particles' kinetic energy.
+//! The grid is a plane. It is either the plane one particle moves in,
+//! or the configuration space (x₁, x₂) of two particles on a line:
+//! with unit masses the Laplacian in (x₁, x₂) is both particles'
+//! kinetic energy, so the solver steps it unchanged, and one sampled
+//! point is one run of the two-particle experiment.
 use std::f64::consts::{PI, TAU};
 
-use crate::packet::Packet;
-use crate::pair::{self, Orbital, Symmetry};
 use crate::wave::{stable_dt, Vec2, Wave};
 
 pub const SPEED: f64 = TAU;
@@ -24,6 +23,15 @@ pub const ELECTRON_MASS: f64 = 9.109_383_7e-31;
 pub const ELECTRON_VOLT: f64 = 1.602_176_634e-19;
 /// Two particles on a line count as together within this distance.
 pub const TOGETHER: f64 = 0.5;
+
+/// A rectangle [[x₀, x₁], [y₀, y₁]] of hard wall.
+pub type Rect = [[f64; 2]; 2];
+/// The potential at a position.
+pub type Potential = fn(Vec2) -> f64;
+/// Writes the initial ψ onto the field.
+pub type Source = fn(&mut Wave);
+/// A closed form along the screen.
+pub type Curve = fn(f64) -> f64;
 
 /// A physical particle and the SI length of one engine unit: for a
 /// beam, its de Broglie wavelength.
@@ -51,73 +59,12 @@ impl Realisation {
     }
 }
 
-/// What the grid is: the plane one particle moves in, or the
-/// configuration space of two particles on a line, x₁ along the
-/// grid's x and x₂ along its y.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Space {
-    Plane,
-    Line,
-}
-
-#[derive(Clone)]
-pub enum Wall {
-    /// A wall across the plane at height y, with openings of the
-    /// given width at the given x.
-    Slits { y: f64, thickness: f64, centers: Vec<f64>, width: f64 },
-    /// Everything with the coordinate along the axis between `from`
-    /// and `to`. On a line, a band along axis 0 is a wall only
-    /// particle 1 feels.
-    Band { axis: usize, from: f64, to: f64 },
-}
-
-#[derive(Clone)]
-pub enum Potential {
-    /// A steep ramp, slope·(p − from) beyond `from` along the axis: a
-    /// soft wall, which on a line only one particle feels.
-    Ramp { axis: usize, from: f64, slope: f64 },
-    /// ½ω²p² along the axis, held at `cap` far out, where the state
-    /// is negligible, so that the time step stays large.
-    Harmonic { axis: usize, omega: f64, cap: f64 },
-    /// A Gaussian well in the separation of two particles on a line,
-    /// −depth·exp(−(x₁ − x₂)²/2 range²).
-    Bond { depth: f64, range: f64 },
-}
-
-#[derive(Clone)]
-pub enum Source {
-    Packet(Packet),
-    /// Two particles on a line, a(x₁)b(x₂), plus or minus b(x₁)a(x₂)
-    /// for bosons or fermions.
-    Pair { a: Orbital, b: Orbital, symmetry: Symmetry },
-    /// Two particles flying apart from the origin, Gaussian in their
-    /// centre c = (x₁ + x₂)/2 and their separation r = x₁ − x₂ with
-    /// relative wavenumber k, ψ ∝ exp(−c²/4σ_c² − r²/4σ_r²) e^{−ikr}:
-    /// positions correlated, momenta anticorrelated. Unentangled, it is
-    /// the product of that state's two marginal packets instead.
-    Epr { widths: [f64; 2], wavenumber: f64, entangled: bool },
-    /// Two bound particles: a Gaussian in the centre and in the
-    /// separation relaxed in imaginary time into the ground state of
-    /// the bond, then kicked with total wavenumber k.
-    Molecule { center: f64, widths: [f64; 2], relax: f64, kick: f64 },
-    /// The ground state of a box `from` < y < `from` + length at the
-    /// closed end of a channel along y with harmonic confinement of
-    /// frequency ω across it; the box's far wall is removed at t = 0.
-    Channel { from: f64, length: f64, omega: f64 },
-}
-
-/// The closed form the screen's current is compared with.
-#[derive(Clone, Copy)]
-pub enum Theory {
-    Fraunhofer,
-}
-
 #[derive(Clone)]
 pub enum Measure {
-    /// Fraction of the particles that crossed the screen.
+    /// Fraction of the particles that crossed the screen, and the
+    /// probability that did.
     Arrived,
-    /// That fraction minus the probability that crossed the screen.
-    ArrivedMinusThrough,
+    Through,
     /// Fraction of the particles that first crossed the screen after
     /// the given time.
     ArrivedAfter { time: f64 },
@@ -132,24 +79,23 @@ pub enum Measure {
     CurrentAt { x: f64 },
     /// Where the current's local maximum nearest x lies.
     MaximumNear { x: f64 },
-    /// On a line: fraction of the runs whose point ever crossed the
-    /// diagonal x₁ = x₂, the two particles passing each other.
+    /// Two particles on a line: fraction of the runs whose point ever
+    /// crossed the diagonal x₁ = x₂, the particles passing each other.
     Crossed,
-    /// On a line: the most of the runs ever within TOGETHER of each
-    /// other at one time, and the most probability.
+    /// The most of the runs ever within TOGETHER of each other at one
+    /// time, and the most probability.
     TogetherPeak,
     ProbabilityTogetherPeak,
-    /// On a line: fraction of the runs more than d apart at the end,
-    /// and that minus the probability apart, counting what the sponge
-    /// took as apart.
+    /// Fraction of the runs more than d apart at the end, and the
+    /// probability, counting what the sponge took as apart.
     Apart { beyond: f64 },
-    ApartMinusProbability { beyond: f64 },
-    /// On a line: correlation coefficient of x₁ and x₂ over the runs at
-    /// the end, and that minus the field's.
+    ProbabilityApart { beyond: f64 },
+    /// Correlation coefficient of x₁ and x₂ over the runs at the end,
+    /// and in the field.
     Correlation,
-    CorrelationMinusField,
+    FieldCorrelation,
     /// Median change of a coordinate between each run and the same run
-    /// of the twin: the experiment without its potentials.
+    /// of the twin: the experiment without its potential.
     MovedVsTwin { axis: usize },
     /// Largest gap between the field's density of a coordinate and the
     /// twin's, as a fraction of its peak.
@@ -169,11 +115,10 @@ pub struct Experiment {
     pub name: &'static str,
     pub summary: &'static str,
     pub realisation: Realisation,
-    pub space: Space,
     pub cells: usize,
     pub dx: f64,
-    pub walls: Vec<Wall>,
-    pub potentials: Vec<Potential>,
+    pub walls: Vec<Rect>,
+    pub potential: Potential,
     pub source: Source,
     /// The spin direction of the pilot wave, a unit vector or zero for
     /// a spinless particle. Only the component normal to the plane
@@ -184,89 +129,43 @@ pub struct Experiment {
     pub duration: f64,
     /// y of the line where arrivals are counted.
     pub screen: Option<f64>,
-    pub theory: Option<Theory>,
+    /// The closed form the screen's current is compared with.
+    pub theory: Option<Curve>,
     pub expectations: Vec<Expectation>,
 }
 
-fn inside(wall: &Wall, p: Vec2) -> bool {
-    match wall {
-        Wall::Slits { y, thickness, centers, width } => {
-            (p[1] - y).abs() < thickness / 2.0
-                && !centers.iter().any(|c| (p[0] - c).abs() < width / 2.0)
-        }
-        Wall::Band { axis, from, to } => (*from..*to).contains(&p[*axis]),
-    }
+pub fn free(_: Vec2) -> f64 {
+    0.0
 }
 
-fn potential(v: &Potential, p: Vec2) -> f64 {
-    match v {
-        Potential::Ramp { axis, from, slope } => slope * (p[*axis] - from).max(0.0),
-        Potential::Harmonic { axis, omega, cap } => {
-            (0.5 * omega * omega * p[*axis] * p[*axis]).min(*cap)
-        }
-        Potential::Bond { depth, range } => {
-            let r = p[0] - p[1];
-            -depth * (-r * r / (2.0 * range * range)).exp()
-        }
-    }
+/// A wall across the plane at height y with openings of the given
+/// width at the given x, as the rectangles between the openings.
+pub fn slits(y: f64, thickness: f64, centers: &[f64], width: f64) -> Vec<Rect> {
+    let edges: Vec<f64> = centers.iter().flat_map(|c| [c - width / 2.0, c + width / 2.0]).collect();
+    let ends = [f64::NEG_INFINITY].into_iter().chain(edges).chain([f64::INFINITY]);
+    let pieces: Vec<f64> = ends.collect();
+    let piece = |x: &[f64]| [[x[0], x[1]], [y - thickness / 2.0, y + thickness / 2.0]];
+    pieces.chunks(2).map(piece).collect()
 }
 
-/// The potential's largest magnitude on a grid reaching `half` from
-/// the origin, which bounds the time step.
-fn potential_max(v: &Potential, half: f64) -> f64 {
-    match v {
-        Potential::Ramp { from, slope, .. } => slope * (half - from).max(0.0),
-        Potential::Harmonic { cap, .. } => *cap,
-        Potential::Bond { depth, .. } => *depth,
-    }
+/// A wall filling everything with the coordinate along the axis
+/// between `from` and `to`; along axis 0 on a line, a wall only
+/// particle 1 feels.
+pub fn band(axis: usize, from: f64, to: f64) -> Rect {
+    let mut rect = [[f64::NEG_INFINITY, f64::INFINITY]; 2];
+    rect[axis] = [from, to];
+    rect
 }
 
-fn gaussian(x: f64, width: f64) -> f64 {
-    (-x * x / (4.0 * width * width)).exp()
-}
-
-impl Source {
-    pub fn write(&self, wave: &mut Wave, dt: f64) {
-        match self {
-            Source::Packet(packet) => packet.write(wave),
-            Source::Pair { a, b, symmetry } => pair::write(wave, *a, *b, *symmetry),
-            Source::Epr { widths: [c, r], wavenumber: k, entangled: true } => {
-                pair::fill(wave, |x1, x2| {
-                    let (u, v) = ((x1 + x2) / 2.0, x1 - x2);
-                    let a = gaussian(u, *c) * gaussian(v, *r);
-                    [a * (k * v).cos(), -a * (k * v).sin()]
-                })
-            }
-            Source::Epr { widths: [c, r], wavenumber: k, entangled: false } => {
-                let width = (c * c + r * r / 4.0).sqrt();
-                let one = Orbital { center: 0.0, width, wavenumber: -k };
-                let two = Orbital { wavenumber: *k, ..one };
-                pair::write(wave, one, two, Symmetry::Distinguishable);
-            }
-            Source::Molecule { center, widths: [w, s], relax, kick } => {
-                pair::fill(wave, |x1, x2| {
-                    [gaussian((x1 + x2) / 2.0 - center, *w) * gaussian(x1 - x2, *s), 0.0]
-                });
-                pair::relax(wave, dt, (relax / dt) as usize);
-                pair::kick(wave, *kick);
-            }
-            Source::Channel { from, length, omega } => pair::fill(wave, |x, y| {
-                let along = if (*from..from + length).contains(&y) {
-                    (PI * (y - from) / length).sin()
-                } else {
-                    0.0
-                };
-                [along * (-0.5 * omega * x * x).exp(), 0.0]
-            }),
-        }
-    }
+fn inside(rect: &Rect, p: Vec2) -> bool {
+    (rect[0][0]..rect[0][1]).contains(&p[0]) && (rect[1][0]..rect[1][1]).contains(&p[1])
 }
 
 /// Fraunhofer intensity per unit x on a screen at distance d from
 /// slits of the given width at the given centres. The cylindrical
 /// wave falls as 1/r and meets the flat screen obliquely, which
 /// together give a factor cos²θ.
-fn fraunhofer(x: f64, d: f64, centers: &[f64], width: f64) -> f64 {
+pub fn fraunhofer(x: f64, d: f64, centers: &[f64], width: f64) -> f64 {
     let r = x.hypot(d);
     let (sin, cos) = (x / r, d / r);
     let beta = PI * width * sin;
@@ -283,15 +182,16 @@ impl Experiment {
         self.cells as f64 * self.dx
     }
 
+    /// The largest stable step, which the potential's largest
+    /// magnitude on the grid bounds.
     pub fn dt(&self) -> f64 {
-        let half = self.extent() / 2.0;
-        let v = self.potentials.iter().map(|v| potential_max(v, half)).fold(0.0, f64::max);
-        stable_dt(self.dx, v)
+        let wave = Wave::new(self.cells, self.dx);
+        let at = |k: usize| (self.potential)(wave.position((k % wave.n, k / wave.n))).abs();
+        stable_dt(self.dx, (0..wave.n * wave.n).map(at).fold(0.0, f64::max))
     }
 
     /// The field at the start: sponge at the edges, walls cut out
-    /// after it so they stay whole, potentials added, the source
-    /// written.
+    /// after it so they stay whole, the potential, then the source.
     pub fn build(&self) -> Wave {
         let mut wave = Wave::new(self.cells, self.dx);
         wave.spin = self.spin[2];
@@ -303,32 +203,26 @@ impl Experiment {
                 if self.walls.iter().any(|w| inside(w, p)) {
                     wave.keep[k] = 0.0;
                 }
-                wave.potential[k] = self.potentials.iter().map(|v| potential(v, p)).sum::<f64>() as f32;
+                wave.potential[k] = (self.potential)(p) as f32;
             }
         }
-        self.source.write(&mut wave, self.dt());
+        (self.source)(&mut wave);
         wave
     }
 
-    /// The same experiment without its potentials, for measures that
-    /// compare runs with and without them.
+    /// The same experiment without its potential, for measures that
+    /// compare runs with and without it.
     pub fn twin(&self) -> Experiment {
-        Experiment { potentials: Vec::new(), expectations: Vec::new(), ..self.clone() }
+        Experiment { potential: free, expectations: Vec::new(), ..self.clone() }
     }
 
-    pub fn needs_twin(&self) -> bool {
-        let twin = |m: &Measure| matches!(m, Measure::MovedVsTwin { .. } | Measure::MarginalVsTwin { .. });
-        self.expectations.iter().any(|x| twin(&x.measure))
+    pub fn measures(&self, f: impl Fn(&Measure) -> bool) -> bool {
+        self.expectations.iter().any(|x| f(&x.measure))
     }
 
     /// The theory's value at x on the screen, zero without a theory.
     pub fn theory(&self, x: f64) -> f64 {
-        let Some(Theory::Fraunhofer) = self.theory else { return 0.0 };
-        let screen = self.screen.expect("a theory needs a screen");
-        let [Wall::Slits { y, thickness, centers, width }] = &self.walls[..] else {
-            panic!("Fraunhofer needs exactly one wall of slits")
-        };
-        fraunhofer(x, screen - y - thickness / 2.0, centers, *width)
+        self.theory.map_or(0.0, |theory| theory(x))
     }
 }
 
@@ -351,15 +245,17 @@ mod tests {
     }
 
     #[test]
-    fn epr_state_has_the_closed_form_correlation_and_its_control_none() {
-        let wave = |entangled| {
-            let mut wave = Wave::new(128, 0.1);
-            Source::Epr { widths: [1.0, 0.6], wavenumber: 3.0, entangled }.write(&mut wave, 0.0);
-            wave
-        };
-        let rho = (1.0 - 0.36 / 4.0) / (1.0 + 0.36 / 4.0);
-        let correlation = pair::correlation;
-        assert!((correlation(&wave(true)) - rho).abs() < 1e-3);
-        assert!(correlation(&wave(false)).abs() < 1e-6);
+    fn slits_leave_only_their_openings_in_the_wall() {
+        let walls = slits(0.0, 0.4, &[-2.0, 2.0], 1.0);
+        assert_eq!(walls.len(), 3);
+        let open = |x: f64| !walls.iter().any(|w| inside(w, [x, 0.1]));
+        assert!(open(-2.0) && open(2.4) && !open(0.0) && !open(-9.0) && !open(9.0));
+        assert!(!walls.iter().any(|w| inside(w, [0.0, 0.3])));
+    }
+
+    #[test]
+    fn a_band_spans_the_other_axis() {
+        let wall = band(0, 5.0, f64::INFINITY);
+        assert!(inside(&wall, [6.0, -1e9]) && !inside(&wall, [4.9, 0.0]));
     }
 }

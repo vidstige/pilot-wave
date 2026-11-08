@@ -1,8 +1,8 @@
 //! Two particles bound by a Gaussian well, sent at a wall only one
 //! of them feels: the pair bounces as a pair, or breaks up.
-use crate::experiment::{
-    Expectation, Experiment, Measure, Potential, Realisation, Source, Space, Wall, ELECTRON_MASS,
-};
+use crate::experiment::{band, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS};
+use crate::pair;
+use crate::wave::{stable_dt, Vec2, Wave};
 
 /// The line is |x| ≤ 12.8.
 const CELLS: usize = 256;
@@ -18,6 +18,9 @@ const WALL: f64 = 5.0;
 const START: f64 = -2.0;
 const WIDTHS: [f64; 2] = [1.0, 0.5];
 const RELAX: f64 = 4.0;
+/// The gentle and the hard kick, total wavenumbers of the pair.
+const KICK: f64 = 2.0;
+const HARD_KICK: f64 = 5.0;
 /// Particles count as apart beyond this separation.
 const APART: f64 = 3.0;
 
@@ -28,10 +31,37 @@ const REALISATION: Realisation = Realisation {
     reference: "for scale only, a nanowire; no particular experiment",
 };
 
+fn bond(p: Vec2) -> f64 {
+    let r = p[0] - p[1];
+    -DEPTH * (-r * r / (2.0 * RANGE * RANGE)).exp()
+}
+
+fn gaussian(x: f64, width: f64) -> f64 {
+    (-x * x / (4.0 * width * width)).exp()
+}
+
+/// The pair in the ground state of its bond, Gaussian in its centre.
+fn bound(wave: &mut Wave) {
+    let [w, s] = WIDTHS;
+    pair::fill(wave, |x1, x2| [gaussian((x1 + x2) / 2.0 - START, w) * gaussian(x1 - x2, s), 0.0]);
+    let dt = stable_dt(DX, DEPTH);
+    pair::relax(wave, dt, (RELAX / dt) as usize);
+}
+
+fn kicked(wave: &mut Wave) {
+    bound(wave);
+    pair::kick(wave, KICK);
+}
+
+fn kicked_hard(wave: &mut Wave) {
+    bound(wave);
+    pair::kick(wave, HARD_KICK);
+}
+
 fn molecule_at(
     name: &'static str,
     summary: &'static str,
-    kick: f64,
+    source: fn(&mut Wave),
     duration: f64,
     apart: f64,
     tolerance: f64,
@@ -40,12 +70,11 @@ fn molecule_at(
         name,
         summary,
         realisation: REALISATION,
-        space: Space::Line,
         cells: CELLS,
         dx: DX,
-        walls: vec![Wall::Band { axis: 0, from: WALL, to: f64::INFINITY }],
-        potentials: vec![Potential::Bond { depth: DEPTH, range: RANGE }],
-        source: Source::Molecule { center: START, widths: WIDTHS, relax: RELAX, kick },
+        walls: vec![band(0, WALL, f64::INFINITY)],
+        potential: bond,
+        source,
         spin: [0.0; 3],
         particles: 20000,
         duration,
@@ -59,10 +88,10 @@ fn molecule_at(
                 tolerance,
             },
             Expectation {
-                what: "that fraction minus the probability apart, counting what left the line",
-                measure: Measure::ApartMinusProbability { beyond: APART },
-                expected: 0.0,
-                tolerance: 0.02,
+                what: "probability apart at the end, counting what left the line",
+                measure: Measure::ProbabilityApart { beyond: APART },
+                expected: apart,
+                tolerance: tolerance.max(0.02),
             },
         ],
     }
@@ -81,7 +110,7 @@ that only particle 1 feels: in configuration space the half plane \
 x₁ > 5. A wall both felt would be a corner, which reflects the pair \
 like a corner reflector and never breaks it. Particle 1 bounces and \
 drags particle 2 round with it; the pair stays bound.",
-        2.0,
+        kicked,
         15.0,
         0.0,
         0.002,
@@ -99,7 +128,7 @@ takes up the pair's kinetic energy: most pairs break, flying off as a \
 ring of fragments around the bound part that still bounces back along \
 the diagonal, and a fraction stays bound although the kick carried \
 more than twice the binding energy.",
-        5.0,
+        kicked_hard,
         6.0,
         0.85,
         0.03,

@@ -62,7 +62,7 @@ fn run_and_report(e: &pilot_wave::experiment::Experiment, particles: usize, out:
             }
         }
         if step % per_frame == 0 {
-            report::frame(e, wave, particles, peak, &format!("{out}/{}_{:04}.png", e.name, step / per_frame));
+            report::frame(wave, particles, peak, &format!("{out}/{}_{:04}.png", e.name, step / per_frame));
         }
     });
     report::write(e, &outcome, &trails, out);

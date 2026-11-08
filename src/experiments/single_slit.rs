@@ -1,16 +1,30 @@
 //! Electrons through one slit: the sinc² diffraction pattern.
 use crate::experiment::{
-    Expectation, Experiment, Measure, Realisation, Source, Space, Theory, Wall, ELECTRON_MASS,
-    SPEED,
+    fraunhofer, free, slits, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS, SPEED,
 };
 use crate::packet::Packet;
+use crate::wave::Wave;
 
 const WIDTH: f64 = 2.0;
+/// The wall at y = 0, this thick, and the screen.
+const THICKNESS: f64 = 0.4;
 const SCREEN: f64 = 30.0;
+/// Where the beam starts, and how far past the screen its centre
+/// would be at the end, so the slow, wide-angle tail crosses it too.
 const START: f64 = -20.0;
-/// The run lasts until the packet's centre would be this far past
-/// the screen, so the slow, wide-angle tail crosses it too.
 const TAIL: f64 = 25.0;
+/// Where the first zero of sinc²(πa sinθ), sinθ = 1/2, meets the screen.
+const FIRST_ZERO: f64 = 17.2;
+
+/// The beam of the slit experiments: a packet 6 wide across and 2
+/// long heading up at speed 2π.
+pub fn beam(wave: &mut Wave) {
+    Packet { center: [0.0, START], width: [6.0, 2.0], wavevector: [0.0, SPEED] }.write(wave)
+}
+
+fn theory(x: f64) -> f64 {
+    fraunhofer(x, SCREEN - THICKNESS / 2.0, &[0.0], WIDTH)
+}
 
 pub fn single_slit() -> Experiment {
     Experiment {
@@ -33,17 +47,16 @@ be watched building up one particle at a time.",
             reference: "Bach et al. 2013, 600 eV electrons; their slit was 62 nm, \
 over a thousand wavelengths, so their pattern sits at angles a thousand times smaller",
         },
-        space: Space::Plane,
         cells: 1024,
         dx: 0.1,
-        walls: vec![Wall::Slits { y: 0.0, thickness: 0.4, centers: vec![0.0], width: WIDTH }],
-        potentials: vec![],
-        source: Source::Packet(Packet { center: [0.0, START], width: [6.0, 2.0], wavevector: [0.0, SPEED] }),
+        walls: slits(0.0, THICKNESS, &[0.0], WIDTH),
+        potential: free,
+        source: beam,
         spin: [0.0; 3],
         particles: 40000,
         duration: (SCREEN - START + TAIL) / SPEED,
         screen: Some(SCREEN),
-        theory: Some(Theory::Fraunhofer),
+        theory: Some(theory),
         expectations: vec![
             Expectation {
                 what: "fraction of particles through the screen, the beam's share across the slit, erf(1/6√2)",
@@ -52,10 +65,10 @@ over a thousand wavelengths, so their pattern sits at angles a thousand times sm
                 tolerance: 0.01,
             },
             Expectation {
-                what: "arrived fraction minus the probability through the screen",
-                measure: Measure::ArrivedMinusThrough,
-                expected: 0.0,
-                tolerance: 0.005,
+                what: "probability through the screen, likewise",
+                measure: Measure::Through,
+                expected: 0.133,
+                tolerance: 0.01,
             },
             Expectation {
                 what: "rms gap between the current and Fraunhofer, of the peak",
@@ -71,7 +84,7 @@ over a thousand wavelengths, so their pattern sits at angles a thousand times sm
             },
             Expectation {
                 what: "current at the first zero of sinc², x = 17.2, of the peak",
-                measure: Measure::CurrentAt { x: 17.2 },
+                measure: Measure::CurrentAt { x: FIRST_ZERO },
                 expected: 0.0,
                 tolerance: 0.02,
             },

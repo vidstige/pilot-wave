@@ -130,15 +130,15 @@ def entangled() -> plt.Figure:
     axes = bottom.subplots(1, 3)
     r = runs("entangled-wall")
     bins = np.arange(-25, 25, 0.4)
-    for ax, axis in zip(axes[:2], ["x1", "x2"]):
+    for ax, axis, label in zip(axes[:2], ["x", "y"], ["x1", "x2"]):
         ax.hist(r[axis], bins, color=FLUX, alpha=0.6, label="with the wall")
         ax.hist(r[axis + "_twin"], bins, histtype="step", color=INK, label="without")
-        tidy(ax, f"{axis} at t = 3.5", "runs")
+        tidy(ax, f"{label} at t = 3.5", "runs")
         ax.legend(frameon=False, fontsize=9)
     ax = axes[2]
     u = runs("unentangled-wall")
-    ax.scatter(r["x1_twin"], r["x1"], s=1, color=FLUX, lw=0, label="entangled")
-    ax.scatter(u["x1_twin"], u["x1"], s=1, color=THEORY, lw=0, label="unentangled")
+    ax.scatter(r["x_twin"], r["x"], s=1, color=FLUX, lw=0, label="entangled")
+    ax.scatter(u["x_twin"], u["x"], s=1, color=THEORY, lw=0, label="unentangled")
     tidy(ax, "x1 without the wall", "x1 with the wall")
     ax.legend(frameon=False, fontsize=9, markerscale=6)
     return figure

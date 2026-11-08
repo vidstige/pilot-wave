@@ -1,9 +1,9 @@
 //! An entangled pair flying apart: the correlation that survives
 //! separation, and a wall only one particle feels moving the other
 //! without any observable sign of it.
-use crate::experiment::{
-    Expectation, Experiment, Measure, Potential, Realisation, Source, Space, ELECTRON_MASS,
-};
+use crate::experiment::{free, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS};
+use crate::pair::{self, Orbital, Symmetry};
+use crate::wave::{Vec2, Wave};
 
 /// The line is |x| ≤ 25.6 in cells of 0.05: on cells of 0.1 the runs
 /// that crossed the fringes of the wave coming back from the wall
@@ -28,24 +28,51 @@ const REALISATION: Realisation = Realisation {
     reference: "for scale only, a nanowire; no particular experiment",
 };
 
+fn gaussian(x: f64, width: f64) -> f64 {
+    (-x * x / (4.0 * width * width)).exp()
+}
+
+/// ψ ∝ exp(−c²/4σ_c² − r²/4σ_r²) e^{−ikr} in the centre c = (x₁ + x₂)/2
+/// and the separation r = x₁ − x₂: positions correlated, momenta
+/// anticorrelated.
+fn epr(wave: &mut Wave) {
+    let [c, r] = WIDTHS;
+    pair::fill(wave, |x1, x2| {
+        let (u, v) = ((x1 + x2) / 2.0, x1 - x2);
+        let a = gaussian(u, c) * gaussian(v, r);
+        [a * (WAVENUMBER * v).cos(), -a * (WAVENUMBER * v).sin()]
+    })
+}
+
+/// The product of the EPR state's two marginal packets.
+fn product(wave: &mut Wave) {
+    let [c, r] = WIDTHS;
+    let width = (c * c + r * r / 4.0).sqrt();
+    let one = Orbital { center: 0.0, width, wavenumber: -WAVENUMBER };
+    let two = Orbital { wavenumber: WAVENUMBER, ..one };
+    pair::write(wave, one, two, Symmetry::Distinguishable)
+}
+
+fn ramp(p: Vec2) -> f64 {
+    SLOPE * (p[1] - WALL).max(0.0)
+}
+
 fn flight(
     name: &'static str,
     summary: &'static str,
-    entangled: bool,
-    walled: bool,
+    source: fn(&mut Wave),
+    potential: fn(Vec2) -> f64,
     expectations: Vec<Expectation>,
 ) -> Experiment {
-    let ramp = Potential::Ramp { axis: 1, from: WALL, slope: SLOPE };
     Experiment {
         name,
         summary,
         realisation: REALISATION,
-        space: Space::Line,
         cells: CELLS,
         dx: DX,
         walls: vec![],
-        potentials: if walled { vec![ramp] } else { vec![] },
-        source: Source::Epr { widths: WIDTHS, wavenumber: WAVENUMBER, entangled },
+        potential,
+        source,
         spin: [0.0; 3],
         particles: 20000,
         duration: DURATION,
@@ -76,10 +103,9 @@ passes through zero at t = 1.2, when |ψ|² is momentarily a product \
 and the entanglement sits wholly in the phase, and settles negative, \
 −0.659 at t = 3.5 with the particles 21 apart: a particle 1 that went \
 far left is matched by a particle 2 that went far right. The runs \
-follow the field's correlation, and the field the closed form of free \
-spreading.",
-        true,
-        false,
+and the field both follow the closed form of free spreading.",
+        epr,
+        free,
         vec![
             Expectation {
                 what: "correlation of x₁ and x₂ over the runs at the end, free spreading in closed form",
@@ -88,9 +114,9 @@ spreading.",
                 tolerance: 0.02,
             },
             Expectation {
-                what: "that correlation minus the field's",
-                measure: Measure::CorrelationMinusField,
-                expected: 0.0,
+                what: "correlation of x₁ and x₂ in the field, likewise",
+                measure: Measure::FieldCorrelation,
+                expected: free_correlation(DURATION),
                 tolerance: 0.01,
             },
         ],
@@ -132,8 +158,8 @@ somewhere else once particle 2 has bounced, since its velocity \
 depends on where particle 2 is; yet the density of x₁ is the same \
 with the wall and without, so no observer of particle 1 alone can \
 tell: nonlocal guidance, no signalling.",
-        true,
-        true,
+        epr,
+        ramp,
         wall_expectations(0.75, 0.15),
     )
 }
@@ -148,8 +174,8 @@ distributions at the start and no entanglement, with the same wall \
 on particle 2. Now particle 1 goes the same way with the wall and \
 without, up to the time stepping, which keeps a product only nearly \
 a product.",
-        false,
-        true,
+        product,
+        ramp,
         wall_expectations(0.0, 0.01),
     )
 }

@@ -1,9 +1,11 @@
 //! Spin without a magnetic field: a spin-1/2 particle released from a
 //! box into a channel, its arrival times at a line down the channel
 //! depending on which way its spin points (Das and Dürr 2019).
-use crate::experiment::{
-    Expectation, Experiment, Measure, Potential, Realisation, Source, Space, Wall, ELECTRON_MASS,
-};
+use std::f64::consts::PI;
+
+use crate::experiment::{band, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS};
+use crate::pair;
+use crate::wave::{Vec2, Wave};
 
 /// The plane is |x|, |y| ≤ 51.2; the channel runs up it, with the
 /// sponge 49 past the arrival line. Closer, the slow tail's long
@@ -11,7 +13,8 @@ use crate::experiment::{
 const CELLS: usize = 1024;
 const DX: f64 = 0.1;
 /// The closed end of the channel, the box's length and the harmonic
-/// confinement across the channel, ½ω²x², held at CAP far out.
+/// confinement across the channel, ½ω²x², held at CAP far out where
+/// the state is negligible so that the time step stays large.
 const END: f64 = -40.0;
 const BOX: f64 = 4.0;
 const OMEGA: f64 = 4.0;
@@ -31,6 +34,19 @@ cylindrical waveguide; this is the plane version, their spin along the axis bein
 the plane and their spin across it our spin normal to the plane",
 };
 
+fn confinement(p: Vec2) -> f64 {
+    (0.5 * OMEGA * OMEGA * p[0] * p[0]).min(CAP)
+}
+
+/// The ground state of the box at the closed end of the channel,
+/// Gaussian across it; the box's far wall is removed at t = 0.
+fn boxed(wave: &mut Wave) {
+    pair::fill(wave, |x, y| {
+        let along = if (END..END + BOX).contains(&y) { (PI * (y - END) / BOX).sin() } else { 0.0 };
+        [along * (-0.5 * OMEGA * x * x).exp(), 0.0]
+    })
+}
+
 fn channel(
     name: &'static str,
     summary: &'static str,
@@ -43,12 +59,11 @@ fn channel(
         name,
         summary,
         realisation: REALISATION,
-        space: Space::Plane,
         cells: CELLS,
         dx: DX,
-        walls: vec![Wall::Band { axis: 1, from: END - 0.4, to: END }],
-        potentials: vec![Potential::Harmonic { axis: 0, omega: OMEGA, cap: CAP }],
-        source: Source::Channel { from: END, length: BOX, omega: OMEGA },
+        walls: vec![band(1, END - 0.4, END)],
+        potential: confinement,
+        source: boxed,
         spin,
         particles: 20000,
         duration: DURATION,
@@ -86,14 +101,14 @@ of a channel along y, confined across it by ½ω²x² with ω = 4, so \
 |ψ|² is 0.35 wide. At t = 0 the box's far wall is removed and the \
 wave spreads down the channel; a line 40 further on, ten box \
 lengths, records when each particle first crosses it; behind it the \
-sponge takes the wave away. In the de \
-Broglie-Bohm theory of the Pauli equation the velocity is the \
-current over the density plus Holland's term ∇×(ρ ŝ)/2ρ, where ŝ is \
-the spin direction. With the spin in the plane that term has no \
-component in the plane, the trajectories are those of a spinless \
-particle, and the arrival times are the quantum flux through the \
-line: a main lobe and a long tail of slow arrivals falling as t⁻⁴, \
-a tenth of them still on their way at t = 120.",
+sponge takes the wave away. In the de Broglie-Bohm theory of the \
+Pauli equation the velocity is the current over the density plus \
+Holland's term ∇×(ρ ŝ)/2ρ, where ŝ is the spin direction. With the \
+spin in the plane that term has no component in the plane, the \
+trajectories are those of a spinless particle, and the arrival times \
+are the quantum flux through the line: a main lobe and a long tail of \
+slow arrivals falling as t⁻⁴, a tenth of them still on their way at \
+t = 120.",
         [0.0, 1.0, 0.0],
         0.90,
         0.10,
@@ -108,15 +123,14 @@ pub fn spin_normal() -> Experiment {
 The same release with the spin normal to the plane. Nothing in the \
 Hamiltonian knows about spin and |ψ|² evolves exactly as before, since \
 ∇×(ρ ŝ) has no divergence; but Holland's term now lies in the plane, \
-(∂ᵧρ, −∂ₓρ)/2ρ, and the trajectories change. Across the channel the \
-density is Gaussian, so the term speeds particles on one side of the \
-axis down the channel and slows those on the other, by ωx; along the \
-channel it drifts the particles sideways where the density changes \
-behind the front, so the slow tail is carried to the fast side. The \
-arrivals pinch off: all have arrived by t = 90, where the spinless \
-tail goes on past 120, and the arrival-time distribution, the one \
-thing measured here, depends on the spin although no field acts on \
-it.",
+(∂ᵧρ, −∂ₓρ)/2ρ, a circulation along the contours of the density, and \
+the particles loop as they go: up the channel on one side of the axis \
+and down on the other, by ωx, and across it where the density changes \
+along the channel, so the slow tail behind the front is carried to \
+the fast side. The arrivals pinch off: all have arrived by t = 90, \
+where the spinless tail goes on past 120, and the arrival-time \
+distribution, the one thing measured here, depends on the spin \
+although no field acts on it.",
         [0.0, 0.0, 1.0],
         1.0,
         0.0,
