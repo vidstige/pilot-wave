@@ -1,16 +1,19 @@
 use std::env;
+use std::f64::consts::TAU;
 use std::fs;
 
+use pilot_wave::encounter::{self, Encounter};
 use pilot_wave::experiment::{
-    experiment, mean_transmission, pattern, transmission, Experiment, BARRIER_HEIGHT,
+    experiment, mean_transmission, pattern, transmission, Experiment, Space, BARRIER_HEIGHT,
     BARRIER_WIDTH, ENERGY, SPEED,
 };
 use pilot_wave::grid::Vec2;
+use pilot_wave::image::{self, Image};
 use pilot_wave::particles::{Kind, Particles};
 use pilot_wave::rng::Rng;
 use pilot_wave::screen::Screen;
 use pilot_wave::wave::Wave;
-use pilot_wave::{plot, png, view};
+use pilot_wave::{pair, plot, png, sample, view};
 
 const PIXELS: usize = 800;
 const GRID: usize = 1024;
@@ -30,6 +33,13 @@ const BINS: usize = 128;
 /// the sponge that absorbs the wave there.
 const EDGE: f64 = 1.0;
 const PLOT: (usize, usize) = (800, 300);
+/// Two particles on a line: the separation beyond which a pair counts
+/// as apart and within which as close, the line view's height and
+/// the time between reports of the separation.
+const APART: f64 = 3.0;
+const NEAR: f64 = 0.5;
+const LINE_HEIGHT: usize = 200;
+const REPORT_EVERY: f64 = 1.0;
 
 type Trail = Vec<Vec2>;
 
@@ -215,6 +225,117 @@ fn write_screen(out: &str, name: &str, screen: &Screen) {
         .expect("write screen table");
 }
 
+/// The configuration-space field with the diagonal and the first
+/// run, over the line view.
+fn line_frame(e: &Experiment, positions: &[Vec2], run: &[Vec2]) -> Image {
+    let mut image = view::field(&e.wave, PIXELS, view::Style::Phase, e.packet.peak());
+    let heads: Vec<Trail> = positions.iter().map(|p| vec![*p]).collect();
+    view::particles(&mut image, &e.wave, &heads);
+    view::diagonal(&mut image);
+    view::run(&mut image, &e.wave, run);
+    let peak = 1.0 / (TAU.sqrt() * e.packet.width[0]);
+    let line = view::line(&e.wave, positions, PIXELS, LINE_HEIGHT, peak);
+    image::stack(&image, &line)
+}
+
+/// Crossings and closest approach, the most probability and runs
+/// ever found close together, and which side of the diagonal the
+/// runs and the field end on.
+fn print_encounter(e: &Experiment, encounter: &Encounter, near: [f64; 2], end: &[Vec2]) {
+    let name = e.name;
+    let mut closest = encounter.closest.clone();
+    closest.sort_by(f64::total_cmp);
+    let (least, median) = (closest[0], closest[closest.len() / 2]);
+    let crossed = encounter.crossed();
+    println!(
+        "{name}: {crossed:.4} of the runs crossed the diagonal, \
+         closest approach {least:.4}, median {median:.3}"
+    );
+    println!(
+        "{name}: within {NEAR} of each other at most {:.4} of the probability, {:.4} of the runs",
+        near[0], near[1]
+    );
+    let past = end.iter().filter(|p| p[0] > p[1]).count() as f64 / end.len() as f64;
+    let field = pair::probability(&e.wave, |p| p[0] > p[1]);
+    let left = e.wave.norm();
+    println!(
+        "{name}: x1 > x2 at the end in {past:.4} of the runs, \
+         probability {field:.4} of the {left:.4} left"
+    );
+}
+
+/// The pair's separation over time and how many runs end apart,
+/// against the probability apart and that absorbed, which only
+/// fragments flying off reach.
+fn print_separations(e: &Experiment, separations: &[(f64, f64, f64)], end: &[Vec2]) {
+    let name = e.name;
+    for (t, mean, spread) in separations {
+        println!("{name}: t = {t:4.1}, separation {mean:.3} ± {spread:.3}");
+    }
+    let runs = encounter::fraction_apart(end, APART);
+    let field = pair::probability(&e.wave, |p| encounter::separation(p) > APART);
+    let absorbed = 1.0 - e.wave.norm();
+    println!(
+        "{name}: apart beyond {APART} at the end {runs:.4} of the runs, \
+         probability {field:.4}, absorbed {absorbed:.4}"
+    );
+}
+
+/// Two particles on a line: frames of configuration space over the
+/// line, trails, and the checks.
+fn run_line(mut e: Experiment, count: usize, out: &str) {
+    let name = e.name;
+    let start = sample::positions(&e.wave, count, &mut Rng::new(1));
+    let mut particles = Particles::new(e.kind, start.clone(), e.packet.wavevector);
+    let mut trails: Vec<Trail> = start[..count.min(TRAILS)].iter().map(|p| vec![*p]).collect();
+    let mut encounter = Encounter::new(&start);
+    let mut near = [0.0f64; 2];
+    let mut separations = vec![];
+    let mut glow = vec![0.0; e.wave.n * e.wave.n];
+    let steps = (e.duration / e.dt).ceil() as usize;
+    let [per_frame, per_glow, per_report] =
+        [FRAME_EVERY, GLOW_EVERY, REPORT_EVERY].map(|t| (t / e.dt) as usize);
+    for step in 0..=steps {
+        if step > 0 {
+            e.wave.step(e.dt);
+            particles.step(&e.wave, e.dt);
+        }
+        let positions = &particles.positions;
+        encounter.record(positions);
+        for (trail, p) in trails.iter_mut().zip(positions) {
+            trail.push(*p);
+        }
+        if step % per_glow == 0 {
+            for (g, d) in glow.iter_mut().zip(densities(&e.wave)) {
+                *g += d;
+            }
+            let field = pair::probability(&e.wave, |p| encounter::separation(p) < NEAR);
+            let runs = 1.0 - encounter::fraction_apart(positions, NEAR);
+            near = [near[0].max(field), near[1].max(runs)];
+        }
+        if step % per_report == 0 {
+            let (mean, spread) = encounter::spread(positions);
+            separations.push((e.wave.time, mean, spread));
+        }
+        if step % per_frame == 0 || step == steps {
+            let image = line_frame(&e, positions, &trails[0]);
+            png::write(format!("{out}/{name}_{:04}.png", step / per_frame), &image)
+                .expect("write frame");
+        }
+    }
+    let glow = glow_field(&e.wave, &glow);
+    let mut image = view::field(&glow, PIXELS, view::Style::Density, peak(&glow));
+    view::particles(&mut image, &e.wave, &trails);
+    view::diagonal(&mut image);
+    view::run(&mut image, &e.wave, &trails[0]);
+    png::write(format!("{out}/{name}_trajectories.png"), &image).expect("write trajectories");
+    let end = &particles.positions;
+    print_encounter(&e, &encounter, near, end);
+    if name.starts_with("molecule") {
+        print_separations(&e, &separations, end);
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let name: &'static str = pilot_wave::experiment::NAMES
@@ -228,6 +349,9 @@ fn main() {
 
     let n = if matches!(name, "harmonic" | "ground" | "box") { SMALL_GRID } else { GRID };
     let mut e = experiment(name, n, kind);
+    if e.space == Space::Line {
+        return run_line(e, count, out);
+    }
     let mut rng = Rng::new(1);
     let start: Vec<Vec2> = (0..count).map(|_| e.packet.sample(&mut rng)).collect();
     let mut particles = Particles::new(kind, start.clone(), e.packet.wavevector);
