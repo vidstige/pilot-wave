@@ -174,9 +174,10 @@ fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail],
             let now = e.wave.centred_densities(e.dt);
             let change = now.iter().zip(initial).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
             println!(
-                "{}: angular momentum {:.4} per particle, largest displacement {:.2e}, \
-                 largest density change {:.2e} of the peak",
+                "{}: energy {:.4}, angular momentum {:.4} per particle, largest displacement \
+                 {:.2e}, largest density change {:.2e} of the peak",
                 e.name,
+                e.wave.energy(),
                 angular_momentum(&e.wave, end),
                 largest_displacement(start, end),
                 change / peak

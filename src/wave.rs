@@ -383,6 +383,14 @@ impl Wave {
         self.re.iter().zip(im).map(|(r, i)| r * r + i * i).collect()
     }
 
+    /// Expected energy ⟨ψ|H|ψ⟩ of a normalised ψ.
+    pub fn energy(&self) -> f64 {
+        let zero = vec![0.0; self.n * self.n];
+        let h = |f: &[f32]| swept(&self.lattice(), 1.0, f, &zero);
+        let dot = |f: &[f32]| f.iter().zip(h(f)).map(|(a, b)| (a * b) as f64).sum::<f64>();
+        (dot(&self.re) + dot(&self.im)) * self.dx * self.dx
+    }
+
     /// One step in imaginary time, ψ ← (ψ − dt H ψ) keep, back to unit
     /// norm. Every state decays by its energy, so repeated steps leave
     /// the lowest state that ψ overlaps. H leaves the outer two cells
@@ -604,12 +612,13 @@ mod tests {
     }
 
     #[test]
-    fn relaxing_settles_into_the_trap_ground_state() {
+    fn relaxing_settles_into_the_trap_ground_state_at_energy_omega() {
         let (mut wave, _) = relaxed_trap();
         let relaxed = densities(&wave);
         trap_ground().write(&mut wave);
         let worst = largest_change(&relaxed, &densities(&wave)) / wave.peak();
         assert!(worst < 1e-4, "{worst}");
+        assert!((wave.energy() - OMEGA).abs() < 1e-3 * OMEGA, "{}", wave.energy());
     }
 
     #[test]
