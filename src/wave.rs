@@ -149,6 +149,16 @@ impl Lattice<'_> {
     }
 }
 
+/// f ← (f + c H g) keep over the whole grid, on one thread.
+fn swept(lattice: &Lattice, c: f32, g: &[f32], f: &[f32]) -> Vec<f32> {
+    let g = Rows { first: 0, parts: [g, &[], &[]] };
+    let mut f = f.to_vec();
+    for (j, row) in f.chunks_mut(lattice.n).enumerate() {
+        lattice.update(j, c, &g, row);
+    }
+    f
+}
+
 /// Copies of the rows of f up to `depth` above and below rows j0..j1.
 fn halo(f: &[f32], n: usize, j0: usize, j1: usize, depth: usize) -> [Vec<f32>; 2] {
     let above = j0.saturating_sub(depth) * n..j0 * n;
@@ -354,6 +364,30 @@ impl Wave {
         self.time += dt as f64;
     }
 
+    fn lattice(&self) -> Lattice<'_> {
+        Lattice {
+            n: self.n,
+            inv: 1.0 / (self.dx * self.dx) as f32,
+            potential: &self.potential,
+            keep: &self.keep,
+            cut: self.cut,
+        }
+    }
+
+    /// One step in imaginary time, ψ ← (ψ − dt H ψ) keep, back to unit
+    /// norm. Every state decays by its energy, so repeated steps leave
+    /// the lowest state that ψ overlaps. H leaves the outer two cells
+    /// alone, so only a sponge or a wall there makes them decay too.
+    pub fn relax(&mut self, dt: f64) {
+        let lattice = self.lattice();
+        let re = swept(&lattice, -dt as f32, &self.re, &self.re);
+        let im = swept(&lattice, -dt as f32, &self.im, &self.im);
+        (self.re, self.im) = (re, im);
+        let scale = (1.0 / self.norm()).sqrt() as f32;
+        for v in self.re.iter_mut().chain(&mut self.im) {
+            *v *= scale;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -523,6 +557,30 @@ mod tests {
             let ((a, _), (b, _)) = (wave.current(k), plain.current(k));
             assert!((a[0] - b[0]).abs() + (a[1] - b[1]).abs() < 1e-6, "{a:?} {b:?}");
         }
+    }
+
+    #[test]
+    fn relaxing_settles_into_the_trap_ground_state() {
+        let omega: f64 = 1.0;
+        let width = 1.0 / (2.0 * omega).sqrt();
+        let ground = Packet { center: [0.0; 2], width: [width; 2], wavevector: [0.0; 2] };
+        let mut wave = Wave::new(128, DX);
+        for k in 0..wave.n * wave.n {
+            let p = wave.position((k % wave.n, k / wave.n));
+            wave.potential[k] = (0.5 * omega * omega * (p[0] * p[0] + p[1] * p[1])) as f32;
+        }
+        Packet { center: [0.5, 0.3], ..ground }.write(&mut wave);
+        let corner = omega * wave.extent() / 2.0;
+        let dt = stable_dt(DX, corner * corner);
+        wave.absorb_edges(dt);
+        for _ in 0..(10.0 / dt) as usize {
+            wave.relax(dt);
+        }
+        let relaxed: Vec<f32> = (0..wave.n * wave.n).map(|k| wave.density(k)).collect();
+        ground.write(&mut wave);
+        let worst = (0..wave.n * wave.n).map(|k| (relaxed[k] - wave.density(k)).abs());
+        let worst = worst.fold(0.0, f32::max);
+        assert!(worst < 1e-4 * wave.peak(), "{}", worst / wave.peak());
     }
 
     #[test]
