@@ -1,8 +1,7 @@
 //! Gaussian wave packets written onto the grid. No I/O.
 use std::f64::consts::PI;
 
-use crate::grid::Vec2;
-use crate::wave::Wave;
+use crate::wave::{Vec2, Wave};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Packet {
@@ -31,4 +30,9 @@ impl Packet {
         }
     }
 
+
+    /// The density at the packet's centre.
+    pub fn peak(&self) -> f32 {
+        (1.0 / (2.0 * PI * self.width[0] * self.width[1])) as f32
+    }
 }

@@ -1,7 +1,6 @@
 //! Particles with definite positions. Quantum ones ride the field's
 //! phase gradient; classical ones obey Newton in the potential. No I/O.
-use crate::grid::Vec2;
-use crate::wave::Wave;
+use crate::wave::{Vec2, Wave};
 
 /// Longest move in one substep, in cells, and the most substeps a
 /// step may take. Next to a node of ψ the guiding velocity is huge,

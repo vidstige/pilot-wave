@@ -1,8 +1,7 @@
 //! Draw positions from |ψ|² on the grid: a cell by its probability,
 //! then anywhere within it. No I/O.
-use crate::grid::Vec2;
 use crate::rng::Rng;
-use crate::wave::Wave;
+use crate::wave::{Vec2, Wave};
 
 pub struct Sampler {
     cumulative: Vec<f64>,

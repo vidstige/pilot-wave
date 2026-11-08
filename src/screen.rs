@@ -1,7 +1,6 @@
 //! A detection line: where particles cross it, and the probability
 //! current the field carries through it, binned along x. No I/O.
-use crate::grid::Vec2;
-use crate::wave::Wave;
+use crate::wave::{Vec2, Wave};
 
 pub struct Screen {
     pub y: f64,
@@ -10,11 +9,13 @@ pub struct Screen {
     pub hits: Vec<f64>,
     /// Time-integrated probability current through the line.
     pub flux: Vec<f64>,
+    /// Every crossing as (time, x), in the order they happened.
+    pub arrivals: Vec<(f64, f64)>,
 }
 
 impl Screen {
     pub fn new(y: f64, half: f64, bins: usize) -> Screen {
-        Screen { y, half, bins, hits: vec![0.0; bins], flux: vec![0.0; bins] }
+        Screen { y, half, bins, hits: vec![0.0; bins], flux: vec![0.0; bins], arrivals: Vec::new() }
     }
 
     fn bin(&self, x: f64) -> Option<usize> {
@@ -23,14 +24,19 @@ impl Screen {
     }
 
     /// Count particles that crossed the line upward this step.
-    pub fn record(&mut self, before: &[Vec2], after: &[Vec2]) {
+    pub fn record(&mut self, time: f64, before: &[Vec2], after: &[Vec2]) {
         for (a, b) in before.iter().zip(after) {
             if a[1] < self.y && b[1] >= self.y {
+                self.arrivals.push((time, b[0]));
                 if let Some(bin) = self.bin(b[0]) {
                     self.hits[bin] += 1.0;
                 }
             }
         }
+    }
+
+    pub fn peak(&self) -> f64 {
+        self.flux.iter().cloned().fold(0.0, f64::max).max(1e-300)
     }
 
     /// Add this step's probability current through the line.
@@ -59,7 +65,8 @@ mod tests {
     #[test]
     fn only_upward_crossings_count_and_land_in_their_bin() {
         let mut screen = Screen::new(1.0, 2.0, 4);
-        screen.record(&[[0.5, 0.9], [-1.5, 1.2], [1.5, 0.0]], &[[0.5, 1.1], [-1.5, 0.8], [1.5, 1.5]]);
+        screen.record(1.0, &[[0.5, 0.9], [-1.5, 1.2], [1.5, 0.0]], &[[0.5, 1.1], [-1.5, 0.8], [1.5, 1.5]]);
+        assert_eq!(screen.arrivals, vec![(1.0, 0.5), (1.0, 1.5)]);
         assert_eq!(screen.hits, vec![0.0, 0.0, 1.0, 1.0]);
     }
 }
