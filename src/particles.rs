@@ -1,5 +1,7 @@
 //! Particles with definite positions. Quantum ones ride the field's
 //! phase gradient; classical ones obey Newton in the potential. No I/O.
+use std::thread;
+
 use crate::wave::{Vec2, Wave};
 
 /// Longest move in one substep, in cells, and the most substeps a
@@ -8,6 +10,8 @@ use crate::wave::{Vec2, Wave};
 /// instead of jumping across.
 const SUBSTEP: f64 = 0.25;
 const MAX_SUBSTEPS: usize = 64;
+/// Particles per thread: fewer is not worth a thread's start-up.
+const PARTICLES_PER_THREAD: usize = 2000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Kind {
@@ -30,27 +34,19 @@ impl Particles {
         Particles { kind, positions, velocities }
     }
 
-    /// Midpoint steps along the guiding velocity field, shortened
-    /// wherever the field moves the particle more than a fraction of a
-    /// cell.
+    /// Every particle takes its guided step, in chunks on all cores.
     fn guide(&mut self, wave: &Wave, dt: f64) {
-        let reach = SUBSTEP * wave.dx;
-        for p in &mut self.positions {
-            let mut left = dt;
-            for substep in 0..MAX_SUBSTEPS {
-                let v = wave.velocity(*p);
-                let speed = v[0].hypot(v[1]).max(f64::MIN_POSITIVE);
-                let h = if substep + 1 == MAX_SUBSTEPS { left } else { left.min(reach / speed) };
-                let mid = [p[0] + 0.5 * h * v[0], p[1] + 0.5 * h * v[1]];
-                let v = wave.velocity(mid);
-                p[0] += h * v[0];
-                p[1] += h * v[1];
-                left -= h;
-                if left <= 0.0 {
-                    break;
-                }
+        let cores = thread::available_parallelism().map_or(1, |t| t.get());
+        let chunk = (self.positions.len() / cores).max(PARTICLES_PER_THREAD);
+        thread::scope(|s| {
+            for positions in self.positions.chunks_mut(chunk) {
+                s.spawn(move || {
+                    for p in positions {
+                        guide(wave, p, dt);
+                    }
+                });
             }
-        }
+        });
     }
 
     /// Newton's law in the potential, with walls as hard reflectors.
@@ -80,6 +76,27 @@ impl Particles {
 
 /// The cell holding a position, kept off the outermost ring so the
 /// force stencil has neighbours.
+/// Midpoint steps along the guiding velocity field, shortened
+/// wherever the field would move the particle more than a fraction
+/// of a cell.
+fn guide(wave: &Wave, p: &mut Vec2, dt: f64) {
+    let reach = SUBSTEP * wave.dx;
+    let mut left = dt;
+    for substep in 0..MAX_SUBSTEPS {
+        let v = wave.velocity(*p);
+        let speed = v[0].hypot(v[1]).max(f64::MIN_POSITIVE);
+        let h = if substep + 1 == MAX_SUBSTEPS { left } else { left.min(reach / speed) };
+        let mid = [p[0] + 0.5 * h * v[0], p[1] + 0.5 * h * v[1]];
+        let v = wave.velocity(mid);
+        p[0] += h * v[0];
+        p[1] += h * v[1];
+        left -= h;
+        if left <= 0.0 {
+            break;
+        }
+    }
+}
+
 fn nearest(wave: &Wave, p: Vec2) -> usize {
     let (x, y) = wave.cell(p);
     let clamp = |c: f64| c.round().clamp(1.0, (wave.n - 2) as f64) as usize;
