@@ -10,6 +10,8 @@ pub type Complex = [f64; 2];
 
 /// The solver's fourth order Laplacian stencil along one axis.
 const STENCIL: [f32; 5] = [-1.0 / 12.0, 4.0 / 3.0, -5.0 / 2.0, 4.0 / 3.0, -1.0 / 12.0];
+/// Subdivisions of a cell along each axis when measuring a region.
+const SUBCELLS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Symmetry {
@@ -133,12 +135,19 @@ pub fn marginals(wave: &Wave) -> [Vec<f64>; 2] {
     m
 }
 
-/// Probability that the pair is in the region of configurations.
+/// Probability that the pair is in the region of configurations,
+/// with the density constant over each cell as the sampler takes it.
+/// Counting whole cells instead would move the edge of a band
+/// |x₁ − x₂| < d by up to half a cell, 10% of a band 0.5 wide.
 pub fn probability(wave: &Wave, region: impl Fn(Vec2) -> bool) -> f64 {
-    let n = wave.n;
-    let inside = |k: usize| region(wave.position((k % n, k / n)));
-    let sum: f64 = (0..n * n).filter(|&k| inside(k)).map(|k| wave.density(k) as f64).sum();
-    sum * wave.dx * wave.dx
+    let (n, s) = (wave.n, SUBCELLS);
+    let offset = |a: usize| ((a as f64 + 0.5) / s as f64 - 0.5) * wave.dx;
+    let share = |p: Vec2| {
+        let inside = (0..s * s).filter(|q| region([p[0] + offset(q % s), p[1] + offset(q / s)]));
+        inside.count() as f64 / (s * s) as f64
+    };
+    let at = |k: usize| wave.density(k) as f64 * share(wave.position((k % n, k / n)));
+    (0..n * n).map(at).sum::<f64>() * wave.dx * wave.dx
 }
 
 /// H f with the solver's stencil, zero on the outer two cells.
