@@ -157,6 +157,7 @@ fn on_screen(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
 pub fn measure(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
     let runs = &o.particles.positions;
     let twin = || o.twin.as_ref().expect("this measure needs the twin");
+    let fraction = |f: fn(&Vec2) -> bool| runs.iter().filter(|p| f(p)).count() as f64 / runs.len() as f64;
     match measure {
         Measure::Crossed => o.crossings.fraction(),
         Measure::TogetherPeak => o.together_peak,
@@ -165,8 +166,10 @@ pub fn measure(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
         Measure::ProbabilityApart { beyond } => {
             pair::probability(&o.wave, |p| encounter::separation(p) > *beyond) + 1.0 - o.wave.norm()
         }
+        Measure::OppositeSides => fraction(|p| p[0] * p[1] < 0.0),
         Measure::Correlation => encounter::correlation(runs),
         Measure::FieldCorrelation => pair::correlation(&o.wave),
+        Measure::MutualInformation => pair::mutual_information(&o.wave),
         Measure::MovedVsTwin { axis } => encounter::moved(runs, &twin().particles.positions, *axis),
         Measure::MarginalVsTwin { axis } => {
             largest_gap(&pair::marginals(&o.wave)[*axis], &pair::marginals(&twin().wave)[*axis])

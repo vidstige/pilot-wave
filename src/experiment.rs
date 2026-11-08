@@ -90,10 +90,16 @@ pub enum Measure {
     /// probability, counting what the sponge took as apart.
     Apart { beyond: f64 },
     ProbabilityApart { beyond: f64 },
+    /// Fraction of the runs ending with the particles on opposite
+    /// sides of the origin.
+    OppositeSides,
     /// Correlation coefficient of x₁ and x₂ over the runs at the end,
     /// and in the field.
     Correlation,
     FieldCorrelation,
+    /// Mutual information of x₁ and x₂ in the field, in nats: zero
+    /// exactly when |ψ|² is a product.
+    MutualInformation,
     /// Median change of a coordinate between each run and the same run
     /// of the twin: the experiment without its potential.
     MovedVsTwin { axis: usize },

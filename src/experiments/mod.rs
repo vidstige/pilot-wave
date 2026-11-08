@@ -15,6 +15,7 @@ pub fn all() -> Vec<Experiment> {
         collision::distinguishable(),
         collision::bosons(),
         collision::fermions(),
+        collision::scattered(),
         molecule::molecule(),
         molecule::molecule_break(),
         entangled::entangled(),

@@ -123,6 +123,21 @@ pub fn correlation(wave: &Wave) -> f64 {
     xy / (xx * yy).sqrt()
 }
 
+/// Mutual information of x₁ and x₂ in the field, in nats, the cells
+/// as bins: the Kullback-Leibler divergence of the joint from the
+/// product of its marginals, zero exactly when it is that product.
+pub fn mutual_information(wave: &Wave) -> f64 {
+    let n = wave.n;
+    let [m1, m2] = marginals(wave);
+    let total: f64 = m1.iter().sum::<f64>() * wave.dx;
+    let term = |k: usize| {
+        let p = wave.density(k) as f64 * wave.dx * wave.dx / total;
+        let q = m1[k % n] * m2[k / n] * wave.dx * wave.dx / (total * total);
+        if p > 0.0 { p * (p / q).ln() } else { 0.0 }
+    };
+    (0..n * n).map(term).sum()
+}
+
 /// Probability that the pair is in the region of configurations,
 /// with the density constant over each cell as the sampler takes it.
 /// Counting whole cells instead would move the edge of a band
@@ -241,6 +256,15 @@ mod tests {
             assert!((total - 1.0).abs() < 1e-4, "{total}");
             assert!((mean - orbital.center).abs() < 1e-3, "{mean}");
         }
+    }
+
+    #[test]
+    fn a_product_shares_no_information_and_two_branches_share_ln_2() {
+        assert!(mutual_information(&pair(Symmetry::Distinguishable)).abs() < 1e-9);
+        let mut wave = Wave::new(96, DX);
+        let blob = |x: f64, y: f64| (-(x * x + y * y) / 0.5).exp();
+        fill(&mut wave, |x1, x2| [blob(x1 - 2.0, x2 + 2.0) + blob(x1 + 2.0, x2 - 2.0), 0.0]);
+        assert!((mutual_information(&wave) - 2f64.ln()).abs() < 1e-3);
     }
 
     #[test]

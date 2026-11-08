@@ -1,9 +1,10 @@
 //! Two particles on a line heading for each other: fermions, bosons
 //! and distinguishable particles, the exchange symmetry alone telling
-//! them apart.
+//! them apart; and distinguishable particles scattering off each
+//! other into an entangled pair.
 use crate::experiment::{free, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS};
 use crate::pair::{self, Orbital, Symmetry};
-use crate::wave::Wave;
+use crate::wave::{Vec2, Wave};
 
 /// The line is |x| ≤ 12.8.
 const CELLS: usize = 256;
@@ -13,6 +14,17 @@ const START: f64 = 4.0;
 const WIDTH: f64 = 1.0;
 const WAVENUMBER: f64 = 2.0;
 const DURATION: f64 = 5.0;
+/// The Gaussian bump between the scattering particles, which at their
+/// relative energy of 4 lets about half the probability through, and
+/// that share, measured from the field.
+const BUMP: f64 = 4.8;
+const BUMP_RANGE: f64 = 0.4;
+const PASSED: f64 = 0.5;
+/// The scattered pair runs on a line twice as long, |x| ≤ 25.6, for
+/// longer, so that the slow tails of both branches clear the origin.
+const SCATTER_CELLS: usize = 512;
+const SCATTER_DURATION: f64 = 8.0;
+
 const REALISATION: Realisation = Realisation {
     particle: "two electrons on a line",
     mass: ELECTRON_MASS,
@@ -40,6 +52,11 @@ fn boson_pair(wave: &mut Wave) {
 fn fermion_pair(wave: &mut Wave) {
     let [a, b] = orbitals();
     pair::write(wave, a, b, Symmetry::Fermions)
+}
+
+fn bump(p: Vec2) -> f64 {
+    let r = p[0] - p[1];
+    BUMP * (-r * r / (2.0 * BUMP_RANGE * BUMP_RANGE)).exp()
 }
 
 fn meeting(
@@ -92,6 +109,13 @@ fn free_expectations(crossed: f64, together: f64) -> Vec<Expectation> {
 }
 
 pub fn distinguishable() -> Experiment {
+    let mut expectations = free_expectations(1.0, 0.197);
+    expectations.push(Expectation {
+        what: "mutual information of x₁ and x₂ in the field at the end: a product state",
+        measure: Measure::MutualInformation,
+        expected: 0.0,
+        tolerance: 0.001,
+    });
     meeting(
         "distinguishable",
         "\
@@ -103,7 +127,7 @@ product; the probability of finding them within 0.5 of each other \
 peaks at t ≈ 2 at 0.197, the free spreading of the relative motion in \
 closed form.",
         distinguishable_pair,
-        free_expectations(1.0, 0.197),
+        expectations,
     )
 }
 
@@ -137,3 +161,49 @@ probability of finding them within 0.5 of each other peaks at only \
     )
 }
 
+pub fn scattered() -> Experiment {
+    let entropy = -PASSED * PASSED.ln() - (1.0 - PASSED) * (1.0 - PASSED).ln();
+    let mut e = meeting(
+        "scattered",
+        "\
+The two distinguishable packets again, now with a Gaussian bump of \
+height 4 and range 0.4 between the particles, which at their relative \
+energy of 4 lets about half the wave through and reflects the rest. \
+Entangled by nothing but having met, the pair leaves in two branches: \
+passed, particle 1 on the right and particle 2 on the left, or \
+bounced, each back where it came from. Either way the particles end \
+on opposite sides of the origin, so a measurement of one, which side \
+it is found on, tells which side the other is on, however far apart \
+they are, and the mutual information of the joint density stays at \
+the entropy of the two branches, about ln 2, while they separate. In \
+this theory the measurement reads a position the particle already \
+has; the branch the pair is not in goes on as an empty wave. No \
+laboratory can do this: it would need two particles in one dimension \
+that interact only with each other.",
+        distinguishable_pair,
+        vec![
+            Expectation {
+                what: "fraction of the runs in which the particles pass each other, the field's transmission",
+                measure: Measure::Crossed,
+                expected: PASSED,
+                tolerance: 0.03,
+            },
+            Expectation {
+                what: "fraction of the runs ending with the particles on opposite sides of the origin",
+                measure: Measure::OppositeSides,
+                expected: 1.0,
+                tolerance: 0.005,
+            },
+            Expectation {
+                what: "mutual information of x₁ and x₂ in the field at the end, the entropy of the two branches",
+                measure: Measure::MutualInformation,
+                expected: entropy,
+                tolerance: 0.05,
+            },
+        ],
+    );
+    e.potential = bump;
+    e.cells = SCATTER_CELLS;
+    e.duration = SCATTER_DURATION;
+    e
+}
