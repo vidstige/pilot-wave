@@ -207,4 +207,17 @@ mod tests {
         assert_eq!(hue(2.0 / 3.0), [0, 0, 255]);
         assert_eq!(hue(1.0), hue(0.0));
     }
+
+    #[test]
+    fn a_wall_only_particle_one_feels_is_only_on_its_line() {
+        let mut wave = Wave::new(32, 0.1);
+        for k in 0..32 * 32 {
+            if wave.position((k % 32, k / 32))[0] > 1.0 {
+                wave.keep[k] = 0.0;
+            }
+        }
+        let count = |walls: Vec<bool>| walls.iter().filter(|w| **w).count();
+        assert_eq!(count(walls(&wave, 0)), 6);
+        assert_eq!(count(walls(&wave, 1)), 0);
+    }
 }
