@@ -374,6 +374,15 @@ impl Wave {
         }
     }
 
+    /// |ψ|² at every cell with im brought back half a step to re's
+    /// time. The scheme keeps im half a step ahead, so density() of a
+    /// stationary state wobbles at twice its energy by a relative
+    /// E dt; this holds still.
+    pub fn centred_densities(&self, dt: f64) -> Vec<f32> {
+        let im = swept(&self.lattice(), 0.5 * dt as f32, &self.re, &self.im);
+        self.re.iter().zip(im).map(|(r, i)| r * r + i * i).collect()
+    }
+
     /// One step in imaginary time, ψ ← (ψ − dt H ψ) keep, back to unit
     /// norm. Every state decays by its energy, so repeated steps leave
     /// the lowest state that ψ overlaps. H leaves the outer two cells
@@ -392,6 +401,8 @@ impl Wave {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::TAU;
+
     use super::*;
     use crate::packet::Packet;
 
@@ -559,28 +570,61 @@ mod tests {
         }
     }
 
-    #[test]
-    fn relaxing_settles_into_the_trap_ground_state() {
-        let omega: f64 = 1.0;
-        let width = 1.0 / (2.0 * omega).sqrt();
-        let ground = Packet { center: [0.0; 2], width: [width; 2], wavevector: [0.0; 2] };
+    const OMEGA: f64 = 1.0;
+
+    fn trap_ground() -> Packet {
+        let width = 1.0 / (2.0 * OMEGA).sqrt();
+        Packet { center: [0.0; 2], width: [width; 2], wavevector: [0.0; 2] }
+    }
+
+    /// A trap's lowest state relaxed from a packet off its centre, and
+    /// the trap's stable step.
+    fn relaxed_trap() -> (Wave, f64) {
         let mut wave = Wave::new(128, DX);
         for k in 0..wave.n * wave.n {
             let p = wave.position((k % wave.n, k / wave.n));
-            wave.potential[k] = (0.5 * omega * omega * (p[0] * p[0] + p[1] * p[1])) as f32;
+            wave.potential[k] = (0.5 * OMEGA * OMEGA * (p[0] * p[0] + p[1] * p[1])) as f32;
         }
-        Packet { center: [0.5, 0.3], ..ground }.write(&mut wave);
-        let corner = omega * wave.extent() / 2.0;
+        Packet { center: [0.5, 0.3], ..trap_ground() }.write(&mut wave);
+        let corner = OMEGA * wave.extent() / 2.0;
         let dt = stable_dt(DX, corner * corner);
         wave.absorb_edges(dt);
         for _ in 0..(10.0 / dt) as usize {
             wave.relax(dt);
         }
-        let relaxed: Vec<f32> = (0..wave.n * wave.n).map(|k| wave.density(k)).collect();
-        ground.write(&mut wave);
-        let worst = (0..wave.n * wave.n).map(|k| (relaxed[k] - wave.density(k)).abs());
-        let worst = worst.fold(0.0, f32::max);
-        assert!(worst < 1e-4 * wave.peak(), "{}", worst / wave.peak());
+        (wave, dt)
+    }
+
+    fn largest_change(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max)
+    }
+
+    fn densities(wave: &Wave) -> Vec<f32> {
+        (0..wave.n * wave.n).map(|k| wave.density(k)).collect()
+    }
+
+    #[test]
+    fn relaxing_settles_into_the_trap_ground_state() {
+        let (mut wave, _) = relaxed_trap();
+        let relaxed = densities(&wave);
+        trap_ground().write(&mut wave);
+        let worst = largest_change(&relaxed, &densities(&wave)) / wave.peak();
+        assert!(worst < 1e-4, "{worst}");
+    }
+
+    #[test]
+    fn centred_density_of_a_stationary_state_holds_still() {
+        let (mut wave, dt) = relaxed_trap();
+        let (centred, plain) = (wave.centred_densities(dt), densities(&wave));
+        // An eighth of a period at the energy ω, where density()
+        // strays furthest.
+        for _ in 0..(TAU / 8.0 / OMEGA / dt) as usize {
+            wave.step(dt);
+        }
+        let peak = wave.peak();
+        let still = largest_change(&centred, &wave.centred_densities(dt)) / peak;
+        let wobble = largest_change(&plain, &densities(&wave)) / peak;
+        assert!(still < 3e-5 && wobble > 3e-4, "{still} {wobble}");
     }
 
     #[test]

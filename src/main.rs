@@ -171,7 +171,7 @@ fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail],
         ),
         "ground" | "vortex" | "antivortex" | "orbital" => {
             let peak = initial.iter().cloned().fold(0.0, f32::max);
-            let now = densities(&e.wave);
+            let now = e.wave.centred_densities(e.dt);
             let change = now.iter().zip(initial).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
             println!(
                 "{}: angular momentum {:.4} per particle, largest displacement {:.2e}, \
@@ -245,7 +245,7 @@ fn main() {
     let mut trails: Vec<Trail> = start[..count.min(TRAILS)].iter().map(|p| vec![*p]).collect();
     let half = e.wave.extent() / 2.0;
     let mut screen = e.screen.map(|y| Screen::new(y, half, BINS));
-    let initial = densities(&e.wave);
+    let initial = e.wave.centred_densities(e.dt);
     let mut glow = vec![0.0; n * n];
     let steps = (e.duration / e.dt).ceil() as usize;
     let per_frame = (FRAME_EVERY / e.dt) as usize;
