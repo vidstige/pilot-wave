@@ -3,7 +3,7 @@ use std::fs;
 
 use pilot_wave::experiment::{
     experiment, mean_transmission, pattern, transmission, Experiment, BARRIER_HEIGHT,
-    BARRIER_WIDTH, ENERGY, SPEED,
+    BARRIER_WIDTH, ENERGY, SLIT_SEPARATION, SPEED,
 };
 use pilot_wave::grid::Vec2;
 use pilot_wave::particles::{Kind, Particles};
@@ -31,6 +31,9 @@ const BINS: usize = 128;
 /// the sponge that absorbs the wave there.
 const EDGE: f64 = 1.0;
 const PLOT: (usize, usize) = (800, 300);
+/// Local maxima on the screen below this fraction of the largest are
+/// taken as noise rather than fringes.
+const FRINGE_FLOOR: f64 = 0.05;
 
 type Trail = Vec<Vec2>;
 
@@ -169,7 +172,7 @@ fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail],
             orbit_error(trails, e.packet.center),
             largest_displacement(start, end)
         ),
-        "ground" | "vortex" | "antivortex" | "orbital" => {
+        "ground" | "vortex" | "antivortex" | "orbital" | "flux-trap" => {
             let peak = initial.iter().cloned().fold(0.0, f32::max);
             let now = e.wave.centred_densities(e.dt);
             let change = now.iter().zip(initial).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
@@ -197,9 +200,50 @@ fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail],
             print_walls(e.name, &e.wave, end);
         }
         "barrier" => print_barrier(e, start, end),
-        "double-slit" | "single-slit" | "disc" => print_walls(e.name, &e.wave, end),
+        "double-slit" | "single-slit" | "disc" | "flux-slit" => print_walls(e.name, &e.wave, end),
         _ => {}
     }
+}
+
+/// Local maxima of a curve over the screen above FRINGE_FLOOR of its
+/// largest, each refined by a parabola through its bin and the two
+/// beside it, as fringe orders d sinθ.
+fn fringe_orders(screen: &Screen, v: &[f64]) -> Vec<f64> {
+    let top = v.iter().cloned().fold(0.0, f64::max);
+    let width = screen.x(1) - screen.x(0);
+    let order = |x: f64| SLIT_SEPARATION * x / x.hypot(screen.y);
+    let refined = |b: usize| {
+        let shift = 0.5 * (v[b - 1] - v[b + 1]) / (v[b - 1] - 2.0 * v[b] + v[b + 1]);
+        order(screen.x(b) + shift * width)
+    };
+    (1..v.len() - 1)
+        .filter(|&b| v[b] > v[b - 1] && v[b] >= v[b + 1] && v[b] > FRINGE_FLOOR * top)
+        .map(refined)
+        .collect()
+}
+
+/// The fringes of the current and of the theory in orders d sinθ,
+/// and the two bins at the centre against the peak for the current,
+/// the arrivals and the theory: half a flux quantum between the
+/// slits moves every maximum by half an order and darkens the centre.
+fn print_fringes(name: &str, screen: &Screen) {
+    let theory: Vec<f64> = (0..BINS).map(|b| pattern(name, screen.x(b), screen.y)).collect();
+    let orders = |v: &[f64]| -> String {
+        fringe_orders(screen, v).iter().map(|o| format!(" {o:.2}")).collect()
+    };
+    let centre = |v: &[f64]| {
+        let top = v.iter().cloned().fold(0.0, f64::max);
+        (v[BINS / 2 - 1] + v[BINS / 2]) / (2.0 * top)
+    };
+    println!("{name}: current maxima at orders{}", orders(&screen.flux));
+    println!("{name}: theory maxima at orders{}", orders(&theory));
+    println!(
+        "{name}: centre {:.4} of the peak for the current, {:.4} for the arrivals, \
+         {:.4} for the theory",
+        centre(&screen.flux),
+        centre(&screen.hits),
+        centre(&theory)
+    );
 }
 
 /// Write the screen as a plot and a table, arrivals and theory scaled
@@ -237,7 +281,8 @@ fn main() {
     let kind = if args.get(4).map(String::as_str) == Some("classical") { Kind::Classical } else { Kind::Quantum };
     fs::create_dir_all(out).expect("create output directory");
 
-    let n = if matches!(name, "harmonic" | "ground" | "box") { SMALL_GRID } else { GRID };
+    let small = matches!(name, "harmonic" | "ground" | "box" | "flux-trap");
+    let n = if small { SMALL_GRID } else { GRID };
     let mut e = experiment(name, n, kind);
     let mut rng = Rng::new(1);
     let sampler = Sampler::new(&e.wave);
@@ -282,6 +327,9 @@ fn main() {
     if let Some(screen) = &screen {
         write_screen(out, name, screen);
         print_screen(name, screen, count);
+        if matches!(name, "double-slit" | "flux-slit") {
+            print_fringes(name, screen);
+        }
     }
     print_summary(&e, &start, &particles.positions, &trails, &initial);
 }

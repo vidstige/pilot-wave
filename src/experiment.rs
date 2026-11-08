@@ -9,9 +9,9 @@ use crate::packet::Packet;
 use crate::particles::Kind;
 use crate::wave::{stable_dt, Wave};
 
-pub const NAMES: [&str; 11] = [
+pub const NAMES: [&str; 13] = [
     "free", "double-slit", "single-slit", "barrier", "disc", "harmonic", "ground", "vortex",
-    "antivortex", "orbital", "box",
+    "antivortex", "orbital", "box", "flux-trap", "flux-slit",
 ];
 pub const SPEED: f64 = TAU;
 pub const ENERGY: f64 = SPEED * SPEED / 2.0;
@@ -42,6 +42,10 @@ pub const DISC_BEAM: f64 = 8.0;
 pub const TRAP: f64 = 0.5;
 const ORBIT: f64 = 4.0;
 const BOX_HALF: f64 = 6.0;
+/// Radius of the hard core shielding the flux line in the trap, and
+/// the imaginary time its state relaxes for.
+const FLUX_CORE: f64 = 0.2;
+const RELAX: f64 = 10.0;
 
 pub struct Experiment {
     pub name: &'static str,
@@ -110,6 +114,22 @@ fn trap_state(wave: &mut Wave, m: i32) {
     });
 }
 
+/// Half a flux quantum through a shielded core at the trap's centre,
+/// and the lowest state of angular momentum 1/2 there: the ground
+/// Gaussian times e^{iθ/2}, θ counterclockwise from the cut, relaxed.
+fn flux_trap_state(wave: &mut Wave, dt: f64) {
+    wall(wave, |p| p[0].hypot(p[1]) < FLUX_CORE);
+    wave.flux_line([0.0; 2]);
+    write(wave, |p| {
+        let envelope = (-0.5 * TRAP * (p[0] * p[0] + p[1] * p[1])).exp();
+        let half = (-p[0]).atan2(p[1]).rem_euclid(TAU) / 2.0;
+        (envelope * half.cos(), envelope * half.sin())
+    });
+    for _ in 0..(RELAX / dt) as usize {
+        wave.relax(dt);
+    }
+}
+
 fn in_wall(p: Vec2) -> bool {
     p[1].abs() < WALL / 2.0
 }
@@ -149,7 +169,7 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
             let packet = Packet { center: [ORBIT, 0.0], width: [width; 2], wavevector: [0.0, TRAP * ORBIT] };
             (packet, 0.5 * TRAP * TRAP * (wave.extent() / 2.0).powi(2), None)
         }
-        "ground" | "vortex" | "antivortex" | "orbital" => {
+        "ground" | "vortex" | "antivortex" | "orbital" | "flux-trap" => {
             potential(&mut wave, |p| 0.5 * TRAP * TRAP * (p[0] * p[0] + p[1] * p[1]));
             let width = 1.0 / (2.0 * TRAP).sqrt();
             let packet = Packet { center: [0.0; 2], width: [width; 2], wavevector: [0.0; 2] };
@@ -158,6 +178,12 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
         "box" => {
             wall(&mut wave, |p| p[0].abs() > BOX_HALF || p[1].abs() > BOX_HALF);
             (Packet { center: [-3.0, 0.0], width: [1.0, 1.0], wavevector: [SPEED / 2.0, SPEED / 4.0] }, 0.0, None)
+        }
+        "flux-slit" => {
+            let d = SLIT_SEPARATION / 2.0;
+            wall(&mut wave, slits(&[-d, d], SLIT_WIDTH));
+            wave.flux_line([0.0; 2]);
+            (upward([0.0, start], [6.0, 2.0]), 0.0, Some(screen_y))
         }
         other => panic!("unknown experiment {other}"),
     };
@@ -170,10 +196,12 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
         "vortex" => trap_state(&mut wave, 1),
         "antivortex" => trap_state(&mut wave, -1),
         "orbital" => trap_state(&mut wave, 0),
+        "flux-trap" => flux_trap_state(&mut wave, dt),
         _ => {}
     }
     let duration = match name {
         "harmonic" | "ground" | "vortex" | "antivortex" | "orbital" => 2.0 * TAU / TRAP,
+        "flux-trap" => 2.0 * TAU / TRAP,
         "box" | "free" => 6.0,
         _ => (screen_y - start + TAIL) / SPEED,
     };
@@ -245,6 +273,12 @@ pub fn pattern(name: &str, x: f64, y: f64) -> f64 {
         "double-slit" => fraunhofer(x, y, &[-d, d], SLIT_WIDTH),
         "single-slit" => fraunhofer(x, y, &[0.0], SINGLE_SLIT_WIDTH),
         "disc" => shadow(x, y),
+        // Half a flux quantum between the slits makes their waves meet
+        // with opposite signs, and |a - b|² = 2|a|² + 2|b|² - |a + b|²:
+        // the double slit's fringes turned over in the same envelope.
+        "flux-slit" => {
+            fraunhofer(x, y, &[0.0], SLIT_WIDTH) - fraunhofer(x, y, &[-d, d], SLIT_WIDTH)
+        }
         _ => 0.0,
     }
 }
@@ -281,5 +315,14 @@ mod tests {
         assert!((shadow(1.3, SCREEN) - shadow(-1.3, SCREEN)).abs() < 1e-9 * shadow(1.3, SCREEN));
         let beside = (1..=10).map(|i| shadow(0.2 * i as f64, SCREEN)).fold(f64::MAX, f64::min);
         assert!(shadow(0.0, SCREEN) > 2.0 * beside);
+    }
+
+    #[test]
+    fn flux_slit_fringes_sit_half_an_order_from_the_double_slits() {
+        let x = |order: f64| (SCREEN - WALL / 2.0) * (order / SLIT_SEPARATION).asin().tan();
+        let flux = |order| pattern("flux-slit", x(order), SCREEN);
+        let plain = |order| pattern("double-slit", x(order), SCREEN);
+        assert!(flux(0.0) < 1e-12 && plain(0.5) < 1e-12);
+        assert!(flux(0.5) > 0.9 * plain(0.0));
     }
 }
