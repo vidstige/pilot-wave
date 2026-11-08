@@ -246,6 +246,31 @@ def molecule() -> plt.Figure:
     ax.legend(frameon=False, fontsize=9, loc="upper left")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
+def flux_trap() -> plt.Figure:
+    figure, axes = plt.subplots(1, 3, figsize=(9, 3.3))
+    box = (-4, 4, -4, 4)
+    for ax, i in zip(axes, [1, 50]):
+        show(ax, f"{OUT}/flux-trap/flux-trap_{i:04}.png", SMALL, box, f"t ≈ {i / 2:g}")
+    show(axes[-1], f"{OUT}/flux-trap-few/flux-trap_trajectories.png", SMALL, box, "60 trails")
+    figure.tight_layout()
+    return figure
+
+
+def flux_slit() -> plt.Figure:
+    figure = plt.figure(figsize=(10, 7.5))
+    grid = figure.add_gridspec(2, 2, height_ratios=[1.3, 1])
+    box = (-25, 25, -10, 40)
+    show(figure.add_subplot(grid[0, 0]), f"{OUT}/flux-slit-few/flux-slit_0012.png", LARGE,
+         (-15, 15, -5, 25), "t ≈ 6, the cut along the dark middle")
+    show(figure.add_subplot(grid[0, 1]), f"{OUT}/flux-slit/flux-slit_trajectories.png", LARGE,
+         box, "trails over the time-integrated density")
+    ax = figure.add_subplot(grid[1, :])
+    screen_plot(ax, "flux-slit", "flux-slit", "Fraunhofer, half a fringe over", 40)
+    plain = screen("double-slit", "double-slit")
+    ax.plot(plain["x"], plain["flux"], color=MUTED, lw=1, ls=":",
+            label="current without the flux line")
+    ax.legend(frameon=False, fontsize=9)
+    figure.tight_layout()
     return figure
 
 
@@ -261,6 +286,8 @@ FIGURES = {
     "free": lambda: frames("free", "free", [1, 4, 8, 12], LARGE, (-12, 12, -24, 24)),
     "fermions": fermions,
     "molecule": molecule,
+    "flux-trap": flux_trap,
+    "flux-slit": flux_slit,
 }
 
 def save(figure: plt.Figure, path: str):

@@ -11,10 +11,10 @@ use crate::pair::{self, Orbital, Symmetry};
 use crate::particles::Kind;
 use crate::wave::{stable_dt, Wave};
 
-pub const NAMES: [&str; 16] = [
+pub const NAMES: [&str; 18] = [
     "free", "double-slit", "single-slit", "barrier", "disc", "harmonic", "ground", "vortex",
-    "antivortex", "orbital", "box", "fermions", "bosons", "distinguishable", "molecule",
-    "molecule-break",
+    "antivortex", "orbital", "box", "flux-trap", "flux-slit", "fermions", "bosons",
+    "distinguishable", "molecule", "molecule-break",
 ];
 pub const SPEED: f64 = TAU;
 pub const ENERGY: f64 = SPEED * SPEED / 2.0;
@@ -83,6 +83,13 @@ pub enum Space {
     Plane,
     Line,
 }
+/// Radius of the hard core shielding the flux line in the trap, the
+/// imaginary time its state relaxes for, and the grid it relaxes on:
+/// the state is below 1e-11 beyond that grid, and relaxing on a 1024
+/// grid took 34 s against 1.2 s.
+const FLUX_CORE: f64 = 0.2;
+const RELAX: f64 = 10.0;
+const RELAX_GRID: usize = 256;
 
 pub struct Experiment {
     pub name: &'static str,
@@ -152,6 +159,40 @@ fn trap_state(wave: &mut Wave, m: i32) {
             _ => (p[0] * envelope, m as f64 * p[1] * envelope),
         }
     });
+}
+
+/// ψ of a smaller grid of the same cells copied into the middle of
+/// a larger one, zero around it.
+fn embed(small: &Wave, wave: &mut Wave) {
+    let offset = (wave.n - small.n) / 2;
+    wave.re.fill(0.0);
+    wave.im.fill(0.0);
+    for j in 0..small.n {
+        for i in 0..small.n {
+            let (k, s) = (wave.index((i + offset, j + offset)), small.index((i, j)));
+            (wave.re[k], wave.im[k]) = (small.re[s], small.im[s]);
+        }
+    }
+}
+
+/// Half a flux quantum through a shielded core at the trap's centre,
+/// and the lowest state of angular momentum 1/2 there: the ground
+/// Gaussian times e^{iθ/2}, θ counterclockwise from the cut, relaxed.
+fn flux_trap_state(wave: &mut Wave, dt: f64) {
+    wall(wave, |p| p[0].hypot(p[1]) < FLUX_CORE);
+    wave.flux_line([0.0; 2]);
+    if wave.n > RELAX_GRID {
+        embed(&experiment("flux-trap", RELAX_GRID, Kind::Quantum).wave, wave);
+    } else {
+        write(wave, |p| {
+            let envelope = (-0.5 * TRAP * (p[0] * p[0] + p[1] * p[1])).exp();
+            let half = (-p[0]).atan2(p[1]).rem_euclid(TAU) / 2.0;
+            (envelope * half.cos(), envelope * half.sin())
+        });
+        for _ in 0..(RELAX / dt) as usize {
+            wave.relax(dt);
+        }
+    }
 }
 
 fn in_wall(p: Vec2) -> bool {
@@ -252,7 +293,7 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
             let packet = Packet { center: [ORBIT, 0.0], width: [width; 2], wavevector: [0.0, TRAP * ORBIT] };
             (packet, 0.5 * TRAP * TRAP * (wave.extent() / 2.0).powi(2), None)
         }
-        "ground" | "vortex" | "antivortex" | "orbital" => {
+        "ground" | "vortex" | "antivortex" | "orbital" | "flux-trap" => {
             potential(&mut wave, |p| 0.5 * TRAP * TRAP * (p[0] * p[0] + p[1] * p[1]));
             let width = 1.0 / (2.0 * TRAP).sqrt();
             let packet = Packet { center: [0.0; 2], width: [width; 2], wavevector: [0.0; 2] };
@@ -265,6 +306,12 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
         "fermions" | "bosons" | "distinguishable" | "molecule" | "molecule-break" => {
             return line(name, kind)
         }
+        "flux-slit" => {
+            let d = SLIT_SEPARATION / 2.0;
+            wall(&mut wave, slits(&[-d, d], SLIT_WIDTH));
+            wave.flux_line([0.0; 2]);
+            (upward([0.0, start], [6.0, 2.0]), 0.0, Some(screen_y))
+        }
         other => panic!("unknown experiment {other}"),
     };
     let dt = stable_dt(DX, potential_max);
@@ -276,10 +323,12 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
         "vortex" => trap_state(&mut wave, 1),
         "antivortex" => trap_state(&mut wave, -1),
         "orbital" => trap_state(&mut wave, 0),
+        "flux-trap" => flux_trap_state(&mut wave, dt),
         _ => {}
     }
     let duration = match name {
         "harmonic" | "ground" | "vortex" | "antivortex" | "orbital" => 2.0 * TAU / TRAP,
+        "flux-trap" => 2.0 * TAU / TRAP,
         "box" | "free" => 6.0,
         _ => (screen_y - start + TAIL) / SPEED,
     };
@@ -351,6 +400,12 @@ pub fn pattern(name: &str, x: f64, y: f64) -> f64 {
         "double-slit" => fraunhofer(x, y, &[-d, d], SLIT_WIDTH),
         "single-slit" => fraunhofer(x, y, &[0.0], SINGLE_SLIT_WIDTH),
         "disc" => shadow(x, y),
+        // Half a flux quantum between the slits makes their waves meet
+        // with opposite signs, and |a - b|² = 2|a|² + 2|b|² - |a + b|²:
+        // the double slit's fringes turned over in the same envelope.
+        "flux-slit" => {
+            fraunhofer(x, y, &[0.0], SLIT_WIDTH) - fraunhofer(x, y, &[-d, d], SLIT_WIDTH)
+        }
         _ => 0.0,
     }
 }
@@ -395,5 +450,14 @@ mod tests {
         // The relative motion's one bound state is 2.82 deep.
         let relative = pair::energy(&e.wave) - KICK * KICK / 4.0;
         assert!((-2.9..-2.6).contains(&relative), "{relative}");
+    }
+
+    #[test]
+    fn flux_slit_fringes_sit_half_an_order_from_the_double_slits() {
+        let x = |order: f64| (SCREEN - WALL / 2.0) * (order / SLIT_SEPARATION).asin().tan();
+        let flux = |order| pattern("flux-slit", x(order), SCREEN);
+        let plain = |order| pattern("double-slit", x(order), SCREEN);
+        assert!(flux(0.0) < 1e-12 && plain(0.5) < 1e-12);
+        assert!(flux(0.5) > 0.9 * plain(0.0));
     }
 }

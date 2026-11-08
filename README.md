@@ -398,3 +398,127 @@ than 3 apart; in the field 0.649 of the probability is apart and the
 sponge has taken 0.199, all of it fragments flying off, 0.848 in all.
 The remaining 0.15 stays bound even though the kick carried more than
 twice the binding energy.
+## Flux line
+
+A thin solenoid carries magnetic flux Φ but no field outside it, yet a
+charge going around it picks up the Aharonov-Bohm phase 2πΦ/Φ₀. In the
+gauge where the vector potential vanishes everywhere except on a cut, a
+half line from the flux point to the edge of the domain, ψ is
+continuous everywhere but jumps by that phase across the cut. For half
+a flux quantum the jump is a sign, which the real and imaginary parts
+carry exactly: every reach of the Laplacian stencil across the cut
+reads its neighbour with the sign flipped. Here the cut runs straight
+up from the flux point between two columns of cells (`Wave::flux_line`
+puts the flux point at the nearest cell corner). The fused row update
+is left as it is and the four cells beside the cut get a correction
+afterwards, and the guiding current's x gradient is corrected the same
+way; vertical reaches never cross the cut. A cut through the whole
+grid is a pure change of gauge, and the tests check that stepping with
+it is the same as flipping the sign of everything right of it,
+stepping without it and flipping back. Only half a flux quantum is
+done; other fluxes would need a complex phase on the reaches.
+
+Phase pictures show a seam along the cut, where the hue jumps by half
+the colour wheel. That is the gauge, not physics: the density, the
+current and the trails are all continuous across it.
+
+```
+cargo run --release -- flux-trap 2000 out/flux-trap
+cargo run --release -- flux-slit 60000 out/flux-slit
+.venv/bin/python tools/figures.py flux-trap flux-slit
+```
+
+The figures also use `out/flux-trap-few` (60 particles),
+`out/flux-slit-few` (300) and `out/double-slit` for the current
+without the flux line.
+
+### Trap
+
+The harmonic trap of ω = 0.5 with the flux line at its centre, inside
+a hard core of radius 0.2 that keeps the wave off the singular point,
+as real solenoids are shielded. Going once around the flux line ψ must
+change sign, so in ψ = f(r) e^{imθ} the angular momentum m is a
+half-integer, and the levels are E = ω(2n + |m| + 1). The lowest are
+m = ±1/2 at E = 3ω/2 = 0.75, a degenerate pair, with
+f = √r e^{−ωr²/2}: near the centre the radial part goes as r^|m|.
+
+Which state is stationary? The ground Gaussian times e^{iθ/2}, with θ
+counted from the cut so that the half angle jumps exactly where ψ must,
+has the right angular part but the radial part of m = 0. It is a mixture
+of the radial levels n = 0, 1, 2, … of m = 1/2 and breathes: run as it
+is, its density changes by up to 98% of its peak within two periods. The
+state √r e^{−ωr²/2} e^{iθ/2} is stationary without the core, but the
+core holds ψ at zero out to r = 0.2, where that state still has 40% of
+its peak density, and it rings by up to 41%. So the experiment relaxes
+the Gaussian times e^{iθ/2} in imaginary time for 10 time units
+(`Wave::relax`) before it starts. Every level decays by its energy, and
+as the trap, the core and the grid are all symmetric under quarter
+turns, the start's m = 1/2 cannot leak into m = −1/2: what is left is
+the lowest m = 1/2 state of this grid with this core. Its energy is
+0.818, the 0.75 of half-integer m plus 0.07 for the core (0.744 with no
+core at all, 0.872 with a core of radius 0.3).
+
+![Half a flux quantum in the trap](images/flux-trap.png)
+
+With 2000 particles the mean angular momentum r × v is 0.5000 per
+particle, against 0.0000 for the ground state and 1.0001 for the
+vortex. Each particle carries exactly a half: the phase is θ/2, so
+v = θ̂/2r and every particle circles the core at the angular speed
+1/2r², the inner ones many times over the two periods and the outer
+ones part of the way, all on circles. The conjugate state e^{−iθ/2}
+is this run's mirror image, with −1/2. Over the two periods the
+density changes by 8.4·10⁻⁶ of its peak, and the energy is 0.8179
+against 0.5000 for the ground state and 1.0000 for the vortex.
+
+That steadiness is read with im brought back half a step to re's time
+(`Wave::centred_densities`). The scheme keeps im half a step ahead,
+and re² + im² of a stationary state wobbles at twice its energy by a
+relative E·dt, 1.5·10⁻³ here. The ground state and the vortex, with
+E = 0.5 and 1, end their two periods, t = 8π, on a zero of that
+wobble, which is why reading the density plainly looked steady for
+them; mid-run it strays by 4.6·10⁻⁴ and 1.8·10⁻³ of the peak.
+
+The half-integer angular momentum is the half-spin reading of the
+flux line. A charge bound to a flux line has its angular momentum
+shifted by the flux in units of the flux quantum, so around half a
+quantum it takes half-integer values: Wilczek (1982) read such
+charge-flux composites as particles of fractional spin, the start of
+anyons, whose spin other fluxes set anywhere in between.
+
+### Double slit around a flux line
+
+The double slit with the flux line midway between the slits, at the
+middle of the wall between them, so the wall shields it, and the cut
+running up from there past the screen to the edge. The waves from the
+two slits pass the flux line on opposite sides and meet with an extra
+relative phase of π, so the fringes move by half a period: the middle
+of the screen, the brightest place without the flux line, goes dark.
+The theory is the Fraunhofer curve with the two slits' amplitudes
+subtracted instead of added, sin² fringes under the same envelope. The
+cut lies along the dark middle, so no seam shows here.
+
+![Double slit around half a flux quantum](images/flux-slit.png)
+
+With 60000 particles, 7030 (0.1172) reach the screen against 0.1182
+of the probability. The current has its maxima at d sinθ = ±0.49,
+±1.46 and ±2.42 where the shifted curve has them at ±0.48, ±1.45 and
+±2.40; the double slit without the flux line has them at 0, ±0.98,
+±1.94 and ±2.87, so every fringe has moved to midway between two of
+the old ones, half a period over to within 0.01 of an order. The two
+bins at the middle of the screen get 3.9% of the peak current (the
+theory puts 3.0% in bins 0.8 wide either side of its zero) and 2.1% of
+the peak arrivals. The current follows the shifted curve to 2.8% of
+the peak, rms, the same as the double slit follows its own; summed
+over each fringe the arrivals match the current to 4.4% in the four
+brightest and 9% in the faint outer pair, 2.2% of the peak rms over
+the whole screen. No trail crosses the dark middle: the arrangement is
+symmetric, so the current along it has no sideways part.
+
+This is the Aharonov-Bohm effect (1959), with the particles never
+touching a field. Chambers (1960) first saw it, with a magnetised iron
+whisker between the two beams of an electron biprism shifting the
+fringes. Tonomura et al. (1986) closed the loophole of leaking field
+with a toroidal magnet covered in a superconductor, which shields the
+field and quantises the flux through it in units of h/2e, half a flux
+quantum for the electron: the fringes inside and outside the torus
+were shifted by either nothing or exactly half a period, as here.
