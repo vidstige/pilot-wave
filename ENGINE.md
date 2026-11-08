@@ -3,15 +3,16 @@
 How the pilot-wave engine works, the decisions behind it, and which
 knobs an experiment turns against which are fixed in the code. The
 engine is `src/wave.rs` (the field), `src/particles.rs` (the guided
-particles), `src/sample.rs` (drawing starting positions), `src/pair.rs`
-(two particles on a line) and `src/screen.rs` (the detection line);
+particles), `src/sample.rs` (drawing starting positions) and `src/screen.rs` (the
+detection line);
 `src/experiment.rs` is what an experiment may say to it, and
 `src/run.rs` drives a run.
 
 ## What it computes
 
 A wavefunction ψ on an n × n grid of square cells of side dx, and a
-set of points moving in the same plane. Each step advances ψ by the
+set of points moving in the same plane, each an independent run of
+the experiment. Each step advances ψ by the
 Schrödinger equation with ħ = m = 1,
 
     i ∂ψ/∂t = −½ ∇²ψ + V ψ,
@@ -27,14 +28,16 @@ ensemble of these deterministic trajectories reproduces the quantum
 statistics, and one particle's trajectory is one run of the
 experiment.
 
-The plane is either the plane one particle moves in, or the
-configuration space (x₁, x₂) of two particles on a line. The engine
-cannot tell the difference: with unit masses the Laplacian in (x₁, x₂)
-is both particles' kinetic energy, a potential U(x₁ − x₂) is their
-interaction, a wall along x₁ = 5 is a wall only particle 1 feels, and
-a point of the plane is the pair's two positions. Two particles both
-free in the plane would need a four-dimensional ψ, which is a
-different engine.
+The particles never interact: they share the field, and the field
+does not know they are there. N interacting particles would share
+one wavefunction over their joint configuration space, of dimension
+N times the dimensions each moves in, and the grid holds two of those
+dimensions. So the plane can also be read as the configuration space
+(x₁, x₂) of two particles on a line, with a potential U(x₁ − x₂) as
+their interaction and a point of the plane as the pair's two
+positions; experiments of that kind were done here and set aside (see
+the README). Two particles both free in the plane would need a
+four-dimensional ψ, which is a different engine.
 
 ## The field
 
@@ -49,11 +52,14 @@ sweep over the grid and runs on all cores with no synchronisation but
 the band halos.
 
 **Stencil.** The Laplacian is the fourth order five-point stencil
-along each axis, [−1/12, 4/3, −5/2, 4/3, −1/12]/dx². At ten cells per
-wavelength it gives the phase velocity of a plane wave within 0.3%;
-the second order stencil was off by 3%, enough to move the double
-slit's fringes. The stencil's largest eigenvalue is 16/(3dx²) per axis,
-which sets the step.
+along each axis, [−1/12, 4/3, −5/2, 4/3, −1/12]/dx². Its dispersion
+is known in closed form (`group_velocity`, `effective_mass`): at ten
+cells per wavelength, the usual k = 2π on dx = 0.1, a wave moves 0.5%
+slower than k and a packet spreads along its motion as if 2.5%
+heavier. The `free` experiment checks the field against exactly
+that. The second order stencil was off by 3% in speed, enough to move
+the double slit's fringes. The stencil's largest eigenvalue is
+16/(3dx²) per axis, which sets the step.
 
 **Time step.** `stable_dt(dx, Vmax) = 0.5 · 2 / (16/(3dx²) + Vmax)`:
 half the stability limit, with the potential's largest magnitude on
@@ -86,12 +92,6 @@ so a fast core takes over from a slow one, with halos of two rows
 sizes here are small enough that the CPU, 150 steps a second on
 1024², keeps every run under three minutes.
 
-**Imaginary time.** For a bound state the field can be relaxed,
-ψ ← ψ − dτ H ψ with renormalisation, which fades every eigenstate
-against the lowest one ψ overlaps. The molecule's bond state is made
-this way; the relaxation uses the same stencil and a step from the
-same `stable_dt`.
-
 ## The particles
 
 **Guiding velocity.** The current Im(ψ*∇ψ) and the density |ψ|² are
@@ -110,9 +110,11 @@ it; the fix was spatial.
 that it moves at most a quarter of a cell, up to 64 substeps per
 field step; the last substep takes whatever time is left. Next to a
 node the velocity is huge and the particle creeps up to it instead of
-jumping across. The one known failure is a node that lies exactly
-along a line of cells, the fermion pair's diagonal: one run in twenty
-thousand steps over it.
+jumping across. Two known limits: a node that lies exactly along a
+line of cells lets one run in twenty thousand step over it, and at
+ten cells per wavelength the ensemble spreads along its motion 2.5%
+more than the field does (`free` measures both), which vanishes at
+twenty cells per wavelength.
 
 **Spin.** The field carries a spin s, the component normal to the
 plane of the experiment's spin direction, and the current gets
@@ -124,8 +126,7 @@ A spin in the plane contributes nothing in two dimensions.
 
 **Sampling.** Starting positions are drawn from |ψ|² on the grid: a
 cell by its probability, then uniformly within it. The seed is 1 for
-every run, so a run is reproducible and the twin of an experiment
-starts from the same points.
+every run, so a run is reproducible.
 
 **Threads.** Particles step in chunks of at least 2000 on all cores,
 each thread reading the field.
@@ -136,6 +137,13 @@ with its time; the probability current through the line is
 integrated in the same bins every step. The two should agree when
 particles cross once; with spin a particle may cross back and forth,
 and only its first crossing counts.
+
+**Exact positions.** Since every particle's position is known, the
+measures can ask things no laboratory can: whether any particle ever
+crossed the axis of symmetry (`CrossedAxis`), whether the particles
+that tunnelled were the ones at the front of the packet
+(`ArrivedFromFront`), how far each one moved (`Moved`), and whether
+the ensemble's spread matches the field's (`Spread`, `FieldSpread`).
 
 ## Decisions
 
@@ -152,15 +160,10 @@ and only its first crossing counts.
   their arithmetic near nodes wants the precision.
 - **Hard walls as zeroed cells** rather than a large potential: a
   potential step a hundred high made ψ fall off within a cell and
-  shrank the step. Where a hard wall froze a few particles that
-  stepped into it (particle 2's wall in the entangled pair), that
-  experiment uses a steep ramp potential instead; both are available.
+  shrank the step. A steep ramp potential is the alternative where a
+  wall must be soft.
 - **First crossings on the screen**, so arrival-time distributions are
   the Bohmian first-arrival ones.
-- **The twin.** A measure that compares runs with and without a
-  potential gets the same experiment with `potential` set to `free`,
-  run from the same seed; this keeps no-signalling checks inside one
-  definition.
 - **Experiments as data** with the source and potential as named
   functions in the experiment's file rather than enums of shapes: the
   file reads top to bottom as the setup, and nothing in the framework
@@ -175,7 +178,7 @@ Every field of `Experiment`:
 | `cells`, `dx` | the grid: n × n cells of side dx, the plane |x|, |y| ≤ n·dx/2 |
 | `walls` | rectangles of hard wall, built with `slits` and `band` or written out |
 | `potential` | V(x, y), a plain function; its largest magnitude on the grid bounds dt |
-| `source` | writes ψ at t = 0: a `Packet`, `pair::write`, `pair::fill` with any closed form, relaxed or kicked |
+| `source` | writes ψ at t = 0: a `Packet`, or `Wave::fill` with any closed form |
 | `spin` | the spin direction; only its component normal to the plane acts |
 | `particles` | how many trajectories, each a run |
 | `duration` | how long to step, in engine time |
@@ -184,26 +187,24 @@ Every field of `Experiment`:
 | `realisation` | the particle and the SI length of one unit, for the printed conversions |
 | `expectations` | named measures with expected values and tolerances |
 
-`dt` is derived, not chosen. The grid cell dx = 0.1 is used by every
-experiment but the entangled pair's 0.05, where fringes of the wave
-coming back from the wall were too fine for 0.1 and bunched the runs.
+`dt` is derived, not chosen. Every experiment uses dx = 0.1, ten
+cells per wavelength for the k = 2π beam; the sanity checks run on
+512 cells, the slits and the channel on 1024.
 
 ## Knobs fixed in the code
 
 | constant | value | where | why |
 |---|---|---|---|
-| `STENCIL` | fourth order, five points | `wave.rs`, `pair.rs` | 0.3% phase error at ten cells per wavelength |
+| `STENCIL` | fourth order, five points | `wave.rs` | 0.5% speed error at ten cells per wavelength |
 | `SPONGE`, `SPONGE_RATE` | 24 cells, rate 40 | `wave.rs` | absorbs short wavelengths without reflection; long ones partly reflect |
 | step safety | 0.5 of the stability limit | `stable_dt` | margin for the potential and the sponge |
 | `CELLS_PER_THREAD` | 65536 | `wave.rs` | below this a thread costs more to start than it saves |
 | `BANDS_PER_THREAD` | 2 | `wave.rs` | lets fast cores take over bands from slow ones |
 | `SUBSTEP`, `MAX_SUBSTEPS` | ¼ cell, 64 | `particles.rs` | creeping up to nodes |
 | `PARTICLES_PER_THREAD` | 2000 | `particles.rs` | thread start-up cost |
-| seed | 1 | `main.rs` | reproducible runs, paired twins |
+| seed | 1 | `main.rs` | reproducible runs |
 | `BINS` | 128 across the plane | `run.rs` | screen resolution: 0.8 wide on a plane of 102.4 |
 | `GLOW_EVERY` | 10 steps | `run.rs` | how often the time-integrated density and the bunching are read |
-| `TOGETHER` | 0.5 | `experiment.rs` | the distance within which two particles count as together |
-| `SUBCELLS` | 4 per axis | `pair.rs` | resolution of a region's probability within a cell |
 | `DECADES` | 3 | `view.rs` | the density range the frames' brightness spans |
 | `PIXELS`, `FRAME_EVERY`, `TRAILS`, `DOTS` | 800, 0.5, 300, 2000 | `report.rs` | what a run writes |
 
@@ -214,8 +215,8 @@ coming back from the wall were too fine for 0.1 and bunched the runs.
   the grid and can come back.
 - No time-dependent potentials or walls: a barrier that is removed at
   t = 0 is written as an initial state that does not extend past it.
-- No more than one field, so no more than two particles on a line and
-  no interacting particles in the plane.
+- No more than one field, so no interacting particles in the plane;
+  two on a line fit the plane as configuration space, see above.
 - No measurement apparatus: a measurement is reading a particle's
   position, and a detector that disturbs ψ would be a wall or a
   potential in the experiment.

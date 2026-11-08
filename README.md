@@ -64,14 +64,9 @@ back from the near-nodes of standing waves instead of crossing them
 (`sample.rs`). A screen bins each particle's first crossing of the
 line and the time-integrated current through it (`screen.rs`).
 
-The grid is either the plane one particle moves in, or the
-configuration space (x₁, x₂) of two particles on a line: with unit
-masses the Laplacian in (x₁, x₂) is both particles' kinetic energy, so
-the solver steps it unchanged, and one sampled point is one run of the
-two-particle experiment (`pair.rs`, `encounter.rs`). A spin direction
-on the field adds Holland's term ∇×(ρ ŝ)/2ρ to the guiding velocity,
-the de Broglie-Bohm velocity of the Pauli equation; it has no
-divergence, so the density evolves as without it.
+A spin direction on the field adds Holland's term ∇×(ρ ŝ)/2ρ to the
+guiding velocity, the de Broglie-Bohm velocity of the Pauli equation;
+it has no divergence, so the density evolves as without it.
 
 An experiment (`experiment.rs`) is a `Realisation`, a grid, walls as
 rectangles (with `slits` and `band` to build them), a potential and a
@@ -79,14 +74,82 @@ source as plain functions of position and of the field, a spin, a
 particle count, a duration, an optional screen with the closed form
 to compare its current with, and expectations: named measures, each
 with an expected value and a tolerance. The runner (`run.rs`) builds
-the field, samples the particles, steps both, and measures; where a
-measure compares against the twin, the experiment without its
-potential, it runs the same starting points through that too.
+the field, samples the particles, steps both, and measures;
 `report.rs` prints and writes. `ENGINE.md` describes the engine in
 detail: the scheme, the decisions behind it, and which knobs an
 experiment turns against which are fixed in the code.
 
 ## Experiments
+
+Nine experiments, each a file in `src/experiments/`. The first five
+are sanity checks against closed forms, the slits and the spin
+experiment against published work. Every expectation is listed by
+`describe`, measured by `run`, and the tables below give the measured
+values.
+
+### Sanity checks
+
+`free`: a packet 2 wide starts at y = −15 and heads up at speed 2π for
+a time of 4, crossing a screen at y = 0. The particles move with it,
+all cross the screen, and the ensemble spreads like |ψ|² does,
+σ(t) = σ₀ √(1 + t²/4σ₀⁴), each particle keeping its place in the
+packet as the trails fan out in straight lines. The grid has its own
+dispersion, which the expectations along the motion allow for: at
+ten cells per wavelength a wave moves 0.5% slower than k and spreads
+as if 2.5% heavier (`group_velocity` and `effective_mass` in
+`wave.rs`). The field follows those closed forms to four digits; the
+particles' spread along the motion runs 2.5% above the field's at
+this resolution and matches it at twenty cells per wavelength.
+
+`mirror`: the same packet meets a hard wall at y = 5 and comes back,
+its mean y the mirror image of the free flight's, nothing lost, no
+particle beyond the wall.
+
+`ground` and `coherent`: a harmonic trap V = ω²r²/2 with ω = 0.5. In
+the ground state, a Gaussian 1 wide, nothing moves: a stationary
+state has a real wavefunction up to a phase, so its phase gradient is
+zero and every particle stands still for a whole period. The same
+Gaussian displaced to x = 4 is a coherent state, which swings through
+the trap without changing shape; its phase is linear in position, so
+every particle moves with the centre and after half a period each one
+has moved exactly 8.
+
+`barrier`: a packet 6 wide across and 2 long meets a barrier 0.4 wide
+and 1.2 times its energy high across the whole plane, the textbook
+one-dimensional problem: T = 1/(1 + V² sinh²(κa)/4E(V − E)) with
+κ = √(2(V − E)), 0.227 at k = 2π and 0.230 averaged over the packet's
+spread of wavenumbers. On the grid it comes out a few percent less.
+Which particles tunnel is decided by where they start: trajectories
+in one dimension cannot cross, so the ones that get through are
+exactly the ones that started at the front of the packet.
+
+```
+for e in free mirror ground coherent barrier; do
+  cargo run --release -- run $e 20000 out/$e
+done
+.venv/bin/python tools/figures.py sanity
+```
+
+![Trails of the free packet, the mirror, the barrier, the ground state and the coherent state](images/sanity.png)
+
+| expectation | expected | measured |
+|---|---|---|
+| free: mean y at the end, −15 + 4·2π at the grid's speed | 10.008 ± 0.05 | 9.996 |
+| free: spread of the particles across the motion | 2.236 ± 0.03 | 2.244 |
+| free: spread of the field across the motion | 2.236 ± 0.01 | 2.2363 |
+| free: spread of the particles along the motion, with the grid's mass | 2.225 ± 0.08 | 2.281 |
+| free: spread of the field along the motion, likewise | 2.225 ± 0.03 | 2.2257 |
+| free: mean arrival time at the screen | 2.399 ± 0.02 | 2.405 |
+| free: fraction through the screen, probability left | 1 ± 0.001 | 0.9999, 1.0003 |
+| mirror: mean y at the end, mirrored in the wall | −0.008 ± 0.1 | 0.026 |
+| mirror: fraction beyond the wall, probability left | 0 ± 0.0001, 1 ± 0.005 | 0.0000, 1.0009 |
+| ground: median distance moved over a period | 0 ± 0.001 | 0.0000 |
+| ground: spread along x, the ground state's width | 1 ± 0.02 | 1.003 |
+| coherent: mean x after half a period | −4 ± 0.05 | −3.993 |
+| coherent: median distance moved, twice the swing | 8 ± 0.05 | 7.9998 |
+| barrier: fraction of particles through, averaged textbook T | 0.230 ± 0.02 | 0.215 |
+| barrier: probability through, likewise | 0.230 ± 0.02 | 0.220 |
+| barrier: fraction of the transmitted that started in the front | 1 ± 0.01 | 1.000 |
 
 ### Single slit
 
@@ -137,168 +200,7 @@ theirs are 0.18 mrad apart against our 0.25 rad.
 | rms gap between the arrivals and the current, of the peak | 0 ± 0.03 | 0.0225 |
 | x of the first-order maximum, d sinθ = 1 | 7.7 ± 0.8 | 7.6 |
 | current at the first minimum, d sinθ = 1/2, of the peak | 0 ± 0.1 | 0.019 |
-
-## Two particles on a line
-
-Two particles on a line have one wavefunction ψ(x₁, x₂) on the same
-square grid, and the Bohmian system is one point (x₁, x₂) moving with
-the guiding velocity; each sampled point is one run. The frames show
-configuration space, x₁ across and x₂ up, with the diagonal x₁ = x₂
-dotted. An interaction is a potential U(x₁ − x₂), and the statistics
-of identical particles come from the symmetry of the initial state
-alone: ψ(x₁, x₂) = ±ψ(x₂, x₁) is preserved by the dynamics.
-
-```
-for e in distinguishable bosons fermions scattered molecule molecule-break; do
-  cargo run --release -- run $e 20000 out/$e
-done
-.venv/bin/python tools/figures.py pairs scattered molecule
-```
-
-### Pauli exclusion from a node
-
-Two packets 1 wide start at x = ∓4 and head for each other at
-wavenumber ±2, as the product a(x₁)b(x₂) (`distinguishable`) or as
-a(x₁)b(x₂) ± b(x₁)a(x₂) (`bosons`, `fermions`): one packet moving
-towards the diagonal, or two mirrored across it. The antisymmetric ψ
-vanishes on the whole diagonal, and that node is all there is to
-Pauli exclusion here: no force acts, yet the guiding velocity turns
-every run back before the particles meet. Bosons do not cross either,
-since a symmetric ψ guides mirrored points in mirrored ways and the
-diagonal is a trajectory of its own, but they reach it and bunch
-there. The expected peaks of the probability of the particles being
-within 0.5 of each other, at t ≈ 2, are the free spreading of the
-relative motion in closed form: 0.197 for distinguishable particles,
-0.287 for bosons, 0.109 for fermions.
-
-![Fermions meeting at the diagonal; trails of fermions, bosons and distinguishable particles](images/pairs.png)
-
-| expectation | distinguishable | bosons | fermions |
-|---|---|---|---|
-| fraction of runs in which the particles pass each other | 1 ± 0.005: 0.999 | 0 ± 0.005: 0.0000 | 0 ± 0.005: 0.0001 |
-| most of the runs ever within 0.5 (± 0.01) | 0.197: 0.199 | 0.287: 0.288 | 0.109: 0.114 |
-| most probability ever within 0.5 (± 0.005) | 0.197: 0.195 | 0.287: 0.284 | 0.109: 0.109 |
-
-The one fermion run in 20000 that crossed is numerical: the node lies
-along the cells (i, i) themselves, and a substep that lands next to
-them can step over.
-
-### Entangled by meeting
-
-`scattered` is the two distinguishable packets again with a Gaussian
-bump of height 4.8 and range 0.4 between the particles, which at their
-relative energy of 4 lets about half the wave through and reflects
-the rest. Entangled by nothing but having met, the pair leaves in two
-branches: passed, particle 1 on the right and particle 2 on the left,
-or bounced, each back where it came from. Either way the particles
-end on opposite sides of the origin, so a measurement of one, which
-side it is found on, tells which side the other is on, however far
-apart they are; and the mutual information of the joint density, zero
-exactly for a product, stays at the entropy of the two branches, ln 2,
-while they separate. In this theory the measurement reads a position
-the particle already has, and the branch the pair is not in goes on
-as an empty wave. No laboratory can do this as it stands: it needs two
-particles in one dimension that interact only with each other, which
-is why it is here, as the simplest entanglement there is. It runs on
-a line twice as long, |x| ≤ 25.6, until t = 8, so that the slow tails
-of both branches clear the origin.
-
-![The scattered pair leaving in two branches](images/scattered.png)
-
-| expectation | expected | measured |
-|---|---|---|
-| fraction of runs in which the particles pass each other, the field's transmission | 0.5 ± 0.03 | 0.489 |
-| fraction of runs ending with the particles on opposite sides of the origin | 1 ± 0.005 | 0.996 |
-| mutual information of x₁ and x₂ in the field at the end, ln 2 | 0.693 ± 0.05 | 0.692 |
-
-The `distinguishable` control checks the other way: its mutual
-information at the end is zero, a product state.
-
-### A molecule
-
-A Gaussian well U = −6 exp(−r²/0.32) in the separation binds exactly
-one state of the relative motion, 2.8 deep. The pair starts as a
-Gaussian in its centre and separation, relaxed in imaginary time into
-that bound state, then gets total wavenumber k towards a hard wall at
-x = 5 that only particle 1 feels, the half plane x₁ > 5. A wall both
-felt would be a right-angled corner, which reflects the pair like a
-corner reflector, reversing the centre's motion and mirroring the
-relative motion, so it never breaks a molecule. With k = 2 (`molecule`,
-kinetic energy 1, a third of the binding energy) particle 1 bounces
-and drags particle 2 round with it. With k = 5 (`molecule-break`,
-kinetic energy 6.25, 2.2 times the binding energy) particle 2 runs on
-through where the wall is not, and most pairs break into a ring of
-fragments around the bound part that still bounces back along the
-diagonal; 0.15 stay bound.
-
-![The molecule bouncing as a pair, and breaking up when kicked harder](images/molecule.png)
-
-| expectation | molecule | molecule-break |
-|---|---|---|
-| fraction of the runs more than 3 apart at the end | 0 ± 0.002: 0.0004 | 0.85 ± 0.03: 0.846 |
-| probability apart at the end, counting what left the line | 0 ± 0.02: 0.0043 | 0.85 ± 0.03: 0.848 |
-
-## Entanglement
-
-Two particles are entangled when ψ(x₁, x₂) is not a product
-a(x₁)b(x₂), and in Bohmian mechanics that has a direct meaning: the
-velocity of particle 1 is read off ψ at the pair's configuration
-(x₁, x₂), so for a product it depends on x₁ alone, and for an
-entangled ψ on where particle 2 is, however far away. The pair starts
-together and flies apart, particle 1 to the left: with the centre
-c = (x₁ + x₂)/2 and the separation r = x₁ − x₂,
-
-ψ ∝ exp(−c²/4σ_c² − r²/4σ_r²) e^{−ikr},  σ_c = 1, σ_r = 0.6, k = 3,
-
-positions correlated and momenta anticorrelated. It runs on a line
-|x| ≤ 25.6 in cells of 0.05 until t = 3.5, when the particles are 21
-apart on average.
-
-```
-for e in entangled entangled-wall unentangled-wall; do
-  cargo run --release -- run $e 20000 out/$e
-done
-.venv/bin/python tools/figures.py entangled
-```
-
-### The entanglement survives separation
-
-For free flight the correlation of x₁ and x₂ has a closed form,
-(Var c − Var r/4)/(Var c + Var r/4) with Var c = σ_c² + t²/16σ_c² and
-Var r = σ_r² + t²/σ_r². It starts at 0.835, passes through zero at
-t = 2σ_cσ_r = 1.2, when |ψ|² is momentarily exactly a product and the
-entanglement sits wholly in the phase, in velocities that depend on
-the other particle's position, and settles negative once the spread
-of the separation outgrows that of the centre: a particle 1 that went
-far left is matched by a particle 2 that went far right (`entangled`).
-
-| expectation | expected | measured |
-|---|---|---|
-| correlation of x₁ and x₂ over the runs at t = 3.5, closed form | −0.659 ± 0.02 | −0.659 |
-| correlation of x₁ and x₂ in the field, likewise | −0.659 ± 0.01 | −0.659 |
-
-### Nonlocal guidance, no signalling
-
-`entangled-wall` adds a wall only particle 2 feels, a steep ramp
-V = 20 (x₂ − 5) for x₂ > 5, the half plane above the dashed line in
-the frames. Particle 2 meets it at t ≈ 1.7, when particle 1 is about
-10 away on the other side with nothing in its way. The runner runs the
-same 20000 starting points again without the wall, the twin, and
-compares run by run: each particle 1 ends somewhere else once particle
-2 has bounced, yet the density of x₁ is the same with the wall and
-without, so no observer of particle 1 alone can tell whether particle
-2 met a wall. `unentangled-wall` is the control, the product of the
-same two marginal packets: particle 1 goes the same way with the wall
-and without, up to the time stepping, which keeps a product only
-nearly a product.
-
-![Entangled pair: configuration space as particle 2 meets its wall, the densities of x₁ and x₂ with and without it, and each run's x₁ against its twin's](images/entangled.png)
-
-| expectation | entangled-wall | unentangled-wall |
-|---|---|---|
-| median change of x₁ against the same run without the wall | 0.75 ± 0.15: 0.750 | 0 ± 0.01: 0.0036 |
-| largest change of x₁'s density, of its peak: no signalling | 0 ± 0.001: 0.0001 | 0 ± 0.001: 0.0001 |
-| largest change of x₂'s density, of its peak | 0.95 ± 0.1: 0.944 | 0.95 ± 0.1: 1.000 |
+| fraction of the particles that ever crossed the axis of symmetry | 0 ± 0.0001 | 0.0000 |
 
 ## Spin without a magnetic field
 
@@ -353,25 +255,19 @@ of time is 1.35 μs; the units `describe` prints. Their guide is a
 cylinder and ours a strip, so the numbers differ, but the mechanism
 and the pinch-off are the same.
 
-## Further experiments worth setting up
+## Set aside, in the history
 
-Found while looking for experiments that fit this engine:
+Two particles on a line, with the plane as their configuration space,
+were done here as experiments before being set aside to keep the set
+small: fermions, bosons and distinguishable particles meeting,
+Pauli exclusion from the node alone; a pair scattered into two
+branches, entangled by meeting, each particle's side telling the
+other's; a molecule bouncing off a wall only one particle feels; and
+an EPR pair flying apart, its correlation surviving separation, with
+a wall on one particle moving the other without any observable sign
+of it. They live at commit `8b8de50` with their figures and README
+sections, and the engine needs nothing new to run them again.
 
-- Bohmian trajectories through a double slit were reconstructed from
-  weak measurements of photon momentum by Kocsis et al. (2011,
-  Science 332, 1170); the average trajectories match ours in form.
-- A classical disc and barrier with their closed forms (the shadow's
-  bright axis, the tunnelling probability) were done here before and
-  can come back as definitions.
-- The Aharonov-Bohm flux line, which shifts the double-slit fringes by
-  half an order and gives the trap state half a unit of angular
-  momentum, was done here before (the sign-flipping cut in the grid)
-  and can come back as a definition once the cut returns.
-- A numerical Bell experiment in de Broglie-Bohm theory (Dartois,
-  Seidelin and Drezet, arXiv 2026) samples entangled positions and
-  finds spin correlations that violate Bell's inequality while
-  respecting no-signalling: with spin on the field, the next step
-  after the entangled pair.
-- Lattices of interacting particles need more than two particles, and
-  configuration space grows a dimension per particle, so they want a
-  mean-field or a chain of pairs rather than the full ψ.
+Worth setting up next: the Kocsis et al. (2011) weak-measurement
+trajectories against the double slit's, the Aharonov-Bohm flux line
+done earlier as a sign-flipping cut, and the Arago spot behind a disc.

@@ -40,10 +40,6 @@ def trails(name: str) -> str:
     return f"{OUT}/{name}/{name}_trails.png"
 
 
-def runs(name: str) -> dict:
-    return np.genfromtxt(f"{OUT}/{name}/{name}_runs.csv", delimiter=",", names=True)
-
-
 def tidy(ax, xlabel: str, ylabel: str):
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -94,62 +90,19 @@ def slit(name: str) -> plt.Figure:
     return figure
 
 
-def pairs() -> plt.Figure:
-    """Fermions meeting at the diagonal, and the trails of each kind."""
-    extent, box = 25.6, (-8, 8, -8, 8)
-    figure = plt.figure(figsize=(12, 8), layout="constrained")
-    top, bottom = figure.subfigures(2, 1)
-    for ax, (i, t) in zip(top.subplots(1, 3), [(0, 0), (4, 2), (8, 4)]):
-        show(ax, frame("fermions", i), extent, box, f"fermions, t = {t}")
-    for ax, name in zip(bottom.subplots(1, 3), ["fermions", "bosons", "distinguishable"]):
-        show(ax, trails(name), extent, box, f"{name}: 300 trails")
-    return figure
-
-
-def scattered() -> plt.Figure:
-    """The pair meeting over the bump and leaving in two branches."""
-    extent, box = 51.2, (-14, 14, -14, 14)
-    figure, axes = plt.subplots(1, 4, figsize=(12, 3.4), layout="constrained")
-    for ax, t in zip(axes, [0, 2, 4, 8]):
-        show(ax, frame("scattered", t * 2), extent, box, f"scattered, t = {t}")
-    return figure
-
-
-def molecule() -> plt.Figure:
-    """The bound pair bouncing off particle 1's wall, and breaking up."""
-    extent, box = 25.6, (-10, 7, -10, 10)
-    figure = plt.figure(figsize=(12, 7), layout="constrained")
-    top, bottom = figure.subfigures(2, 1)
-    for ax, t in zip(top.subplots(1, 4), [0, 5, 10, 15]):
-        show(ax, frame("molecule", t * 2), extent, box, f"molecule, k = 2, t = {t}")
-    for ax, t in zip(bottom.subplots(1, 4), [0, 2, 4, 6]):
-        show(ax, frame("molecule-break", t * 2), extent, box, f"molecule-break, k = 5, t = {t}")
-    return figure
-
-
-def entangled() -> plt.Figure:
-    """Particle 2 meeting its wall, and what that does and does not do
-    to particle 1."""
-    extent, box = 51.2, (-18, 8, -8, 10)
-    figure = plt.figure(figsize=(12, 8), layout="constrained")
-    top, bottom = figure.subfigures(2, 1, height_ratios=[1.3, 1])
-    for ax, t in zip(top.subplots(1, 4), [0, 1.5, 2.5, 3.5]):
-        show(ax, frame("entangled-wall", int(t * 2)), extent, box, f"entangled-wall, t = {t}")
-        ax.axhline(5, color=THEORY, ls="--", lw=1)
-    axes = bottom.subplots(1, 3)
-    r = runs("entangled-wall")
-    bins = np.arange(-25, 25, 0.4)
-    for ax, axis, label in zip(axes[:2], ["x", "y"], ["x1", "x2"]):
-        ax.hist(r[axis], bins, color=FLUX, alpha=0.6, label="with the wall")
-        ax.hist(r[axis + "_twin"], bins, histtype="step", color=INK, label="without")
-        tidy(ax, f"{label} at t = 3.5", "runs")
-        ax.legend(frameon=False, fontsize=9)
-    ax = axes[2]
-    u = runs("unentangled-wall")
-    ax.scatter(r["x_twin"], r["x"], s=1, color=FLUX, lw=0, label="entangled")
-    ax.scatter(u["x_twin"], u["x"], s=1, color=THEORY, lw=0, label="unentangled")
-    tidy(ax, "x1 without the wall", "x1 with the wall")
-    ax.legend(frameon=False, fontsize=9, markerscale=6)
+def sanity() -> plt.Figure:
+    """Trails of the free packet, the mirror, the barrier and the trap."""
+    extent = 51.2
+    panels = [
+        ("free", (-8, 8, -20, 16)),
+        ("mirror", (-8, 8, -20, 8)),
+        ("barrier", (-8, 8, -16, 10)),
+        ("ground", (-4, 4, -4, 4)),
+        ("coherent", (-7, 7, -5, 5)),
+    ]
+    figure, axes = plt.subplots(1, 5, figsize=(13, 4.2), layout="constrained")
+    for ax, (name, box) in zip(axes, panels):
+        show(ax, trails(name), extent, box, f"{name}: 300 trails", aspect="auto")
     return figure
 
 
@@ -183,10 +136,7 @@ def spin() -> plt.Figure:
 FIGURES = {
     "single-slit": lambda: slit("single-slit"),
     "double-slit": lambda: slit("double-slit"),
-    "pairs": pairs,
-    "scattered": scattered,
-    "molecule": molecule,
-    "entangled": entangled,
+    "sanity": sanity,
     "spin": spin,
 }
 
