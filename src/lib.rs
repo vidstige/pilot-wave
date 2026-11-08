@@ -11,6 +11,7 @@ pub mod plot;
 pub mod png;
 pub mod rate;
 pub mod rng;
+pub mod sample;
 pub mod screen;
 pub mod topdown;
 pub mod view;

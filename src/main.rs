@@ -8,6 +8,7 @@ use pilot_wave::experiment::{
 use pilot_wave::grid::Vec2;
 use pilot_wave::particles::{Kind, Particles};
 use pilot_wave::rng::Rng;
+use pilot_wave::sample::Sampler;
 use pilot_wave::screen::Screen;
 use pilot_wave::wave::Wave;
 use pilot_wave::{plot, png, view};
@@ -42,10 +43,6 @@ fn densities(wave: &Wave) -> Vec<f32> {
 }
 
 /// The time-integrated density as a field to draw, walls included.
-fn peak(wave: &Wave) -> f32 {
-    (0..wave.n * wave.n).map(|k| wave.density(k)).fold(0.0, f32::max)
-}
-
 fn glow_field(wave: &Wave, glow: &[f32]) -> Wave {
     let mut field = Wave::new(wave.n, wave.dx);
     field.re = glow.iter().map(|g| g.sqrt()).collect();
@@ -152,6 +149,16 @@ fn print_barrier(e: &Experiment, start: &[Vec2], end: &[Vec2]) {
     println!("barrier: transmitted started at y >= {rear:.3}, reflected at y <= {front:.3}");
 }
 
+/// Mean r × v of the particles, the orbital angular momentum each one
+/// carries about the trap's centre.
+fn angular_momentum(wave: &Wave, positions: &[Vec2]) -> f64 {
+    let l = |p: &Vec2| {
+        let v = wave.velocity(*p);
+        p[0] * v[1] - p[1] * v[0]
+    };
+    positions.iter().map(l).sum::<f64>() / positions.len() as f64
+}
+
 fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail], initial: &[f32]) {
     let s = spread(&e.wave);
     match e.name {
@@ -162,12 +169,15 @@ fn print_summary(e: &Experiment, start: &[Vec2], end: &[Vec2], trails: &[Trail],
             orbit_error(trails, e.packet.center),
             largest_displacement(start, end)
         ),
-        "ground" => {
+        "ground" | "vortex" | "antivortex" | "orbital" => {
             let peak = initial.iter().cloned().fold(0.0, f32::max);
             let now = densities(&e.wave);
             let change = now.iter().zip(initial).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
             println!(
-                "ground: largest displacement {:.2e}, largest density change {:.2e} of the peak",
+                "{}: angular momentum {:.4} per particle, largest displacement {:.2e}, \
+                 largest density change {:.2e} of the peak",
+                e.name,
+                angular_momentum(&e.wave, end),
                 largest_displacement(start, end),
                 change / peak
             );
@@ -229,8 +239,9 @@ fn main() {
     let n = if matches!(name, "harmonic" | "ground" | "box") { SMALL_GRID } else { GRID };
     let mut e = experiment(name, n, kind);
     let mut rng = Rng::new(1);
-    let start: Vec<Vec2> = (0..count).map(|_| e.packet.sample(&mut rng)).collect();
-    let mut particles = Particles::new(kind, start.clone(), e.packet.wavevector);
+    let sampler = Sampler::new(&e.wave);
+    let start: Vec<Vec2> = (0..count).map(|_| sampler.draw(&mut rng)).collect();
+    let mut particles = Particles::new(kind, start.clone(), &e.wave);
     let mut trails: Vec<Trail> = start[..count.min(TRAILS)].iter().map(|p| vec![*p]).collect();
     let half = e.wave.extent() / 2.0;
     let mut screen = e.screen.map(|y| Screen::new(y, half, BINS));
@@ -257,14 +268,14 @@ fn main() {
             }
         }
         if step % per_frame == 0 || step == steps {
-            let mut image = view::field(&e.wave, PIXELS, view::Style::Phase, e.packet.peak());
+            let mut image = view::field(&e.wave, PIXELS, view::Style::Phase, e.peak);
             let heads: Vec<Trail> = particles.positions.iter().map(|p| vec![*p]).collect();
             view::particles(&mut image, &e.wave, &heads);
             png::write(format!("{out}/{name}_{:04}.png", step / per_frame), &image).expect("write frame");
         }
     }
     let glow = glow_field(&e.wave, &glow);
-    let mut image = view::field(&glow, PIXELS, view::Style::Density, peak(&glow));
+    let mut image = view::field(&glow, PIXELS, view::Style::Density, glow.peak());
     view::particles(&mut image, &e.wave, &trails);
     png::write(format!("{out}/{name}_trajectories.png"), &image).expect("write trajectories");
     if let Some(screen) = &screen {

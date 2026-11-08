@@ -24,8 +24,10 @@ pub struct Particles {
 }
 
 impl Particles {
-    pub fn new(kind: Kind, positions: Vec<Vec2>, velocity: Vec2) -> Particles {
-        let velocities = vec![velocity; positions.len()];
+    /// Particles at the given positions, classical ones starting with
+    /// the field's velocity there.
+    pub fn new(kind: Kind, positions: Vec<Vec2>, wave: &Wave) -> Particles {
+        let velocities = positions.iter().map(|&p| wave.velocity(p)).collect();
         Particles { kind, positions, velocities }
     }
 
@@ -118,8 +120,9 @@ mod tests {
 
     #[test]
     fn classical_particle_reflects_off_a_wall() {
-        let wave = walled_wave();
-        let mut particles = Particles::new(Kind::Classical, vec![[0.0, 0.0]], [5.0, 0.0]);
+        let mut wave = walled_wave();
+        Packet { center: [0.0; 2], width: [1.0; 2], wavevector: [5.0, 0.0] }.write(&mut wave);
+        let mut particles = Particles::new(Kind::Classical, vec![[0.0, 0.0]], &wave);
         for _ in 0..200 {
             particles.step(&wave, 0.01);
         }
@@ -129,8 +132,9 @@ mod tests {
 
     #[test]
     fn classical_particle_at_the_edge_does_not_panic() {
-        let wave = Wave::new(32, 0.1);
-        let mut particles = Particles::new(Kind::Classical, vec![[-1.6, 1.6], [9.0, -9.0]], [-3.0, 3.0]);
+        let mut wave = Wave::new(32, 0.1);
+        Packet { center: [0.0; 2], width: [3.0; 2], wavevector: [-3.0, 3.0] }.write(&mut wave);
+        let mut particles = Particles::new(Kind::Classical, vec![[-1.6, 1.6], [1.4, -1.4]], &wave);
         for _ in 0..50 {
             particles.step(&wave, 0.01);
         }
@@ -141,7 +145,7 @@ mod tests {
         let mut wave = Wave::new(128, 0.1);
         let packet = Packet { center: [-2.0, 0.0], width: [1.0, 1.0], wavevector: [4.0, 0.0] };
         packet.write(&mut wave);
-        let mut particles = Particles::new(Kind::Quantum, vec![[-2.0, 0.0], [-2.5, 0.4]], [0.0; 2]);
+        let mut particles = Particles::new(Kind::Quantum, vec![[-2.0, 0.0], [-2.5, 0.4]], &wave);
         let dt = 0.002;
         for _ in 0..200 {
             wave.step(dt);

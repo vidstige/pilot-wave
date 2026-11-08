@@ -6,6 +6,7 @@ use crate::grid::Vec2;
 use crate::image::{Color, Image};
 use crate::particles::{Kind, Particles};
 use crate::rng::Rng;
+use crate::sample::Sampler;
 use crate::screen::Screen;
 use crate::wave::Wave;
 use crate::{oblique, plot, view};
@@ -80,8 +81,9 @@ impl Live {
     pub fn new(setup: Setup) -> Live {
         let e = experiment(setup.name, setup.n, setup.kind);
         let mut rng = Rng::new(SEED);
-        let positions = (0..setup.count).map(|_| e.packet.sample(&mut rng)).collect();
-        let mut particles = Particles::new(setup.kind, positions, e.packet.wavevector);
+        let sampler = Sampler::new(&e.wave);
+        let positions = (0..setup.count).map(|_| sampler.draw(&mut rng)).collect();
+        let mut particles = Particles::new(setup.kind, positions, &e.wave);
         crop(&mut particles, &e.wave);
         let half = e.wave.extent() / 2.0;
         let screen = e.screen.map(|y| Screen::new(y, half, BINS));
@@ -142,7 +144,7 @@ impl Live {
                 return oblique::render(&grid, &[], w, h, OBLIQUE_SAMPLES);
             }
         };
-        let peak = self.experiment.packet.peak();
+        let peak = self.experiment.peak;
         let mut image = view::field(wave, wave.n.min(FIELD_PIXELS), style, peak);
         let heads: Vec<Vec<Vec2>> =
             self.particles.positions.iter().map(|p| vec![*p]).collect();

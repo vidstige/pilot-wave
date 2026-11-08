@@ -1,9 +1,7 @@
-//! Gaussian wave packets: the field's starting shape and the matching
-//! draw of particle positions from |ψ|². No I/O.
+//! Gaussian wave packets written onto the grid. No I/O.
 use std::f64::consts::PI;
 
 use crate::grid::Vec2;
-use crate::rng::Rng;
 use crate::wave::Wave;
 
 #[derive(Clone, Copy, Debug)]
@@ -33,35 +31,4 @@ impl Packet {
         }
     }
 
-    /// The density at the packet's centre.
-    pub fn peak(&self) -> f32 {
-        (1.0 / (2.0 * PI * self.width[0] * self.width[1])) as f32
-    }
-
-    /// A position drawn from |ψ|², which is Gaussian with these widths.
-    pub fn sample(&self, rng: &mut Rng) -> Vec2 {
-        [
-            self.center[0] + self.width[0] * rng.normal(),
-            self.center[1] + self.width[1] * rng.normal(),
-        ]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn samples_spread_like_the_packet() {
-        let packet = Packet { center: [1.0, -2.0], width: [0.5, 2.0], wavevector: [0.0; 2] };
-        let mut rng = Rng::new(3);
-        let n = 4000;
-        let samples: Vec<Vec2> = (0..n).map(|_| packet.sample(&mut rng)).collect();
-        for axis in 0..2 {
-            let mean = samples.iter().map(|p| p[axis]).sum::<f64>() / n as f64;
-            let var = samples.iter().map(|p| (p[axis] - mean).powi(2)).sum::<f64>() / n as f64;
-            assert!((mean - packet.center[axis]).abs() < 0.05 * packet.width[axis]);
-            assert!((var.sqrt() - packet.width[axis]).abs() < 0.05 * packet.width[axis]);
-        }
-    }
 }

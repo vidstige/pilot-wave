@@ -216,6 +216,10 @@ impl Wave {
         self.re[k] * self.re[k] + self.im[k] * self.im[k]
     }
 
+    pub fn peak(&self) -> f32 {
+        (0..self.n * self.n).map(|k| self.density(k)).fold(0.0, f32::max)
+    }
+
     /// Total probability, which stays near 1 until the sponge or a wall
     /// takes some.
     pub fn norm(&self) -> f64 {

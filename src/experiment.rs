@@ -9,8 +9,9 @@ use crate::packet::Packet;
 use crate::particles::Kind;
 use crate::wave::{stable_dt, Wave};
 
-pub const NAMES: [&str; 8] = [
-    "free", "double-slit", "single-slit", "barrier", "disc", "harmonic", "ground", "box",
+pub const NAMES: [&str; 11] = [
+    "free", "double-slit", "single-slit", "barrier", "disc", "harmonic", "ground", "vortex",
+    "antivortex", "orbital", "box",
 ];
 pub const SPEED: f64 = TAU;
 pub const ENERGY: f64 = SPEED * SPEED / 2.0;
@@ -51,6 +52,8 @@ pub struct Experiment {
     pub duration: f64,
     /// y of the line where arrivals are counted, if any.
     pub screen: Option<f64>,
+    /// The starting density's peak, the reference for brightness.
+    pub peak: f32,
 }
 
 fn upward(center: Vec2, width: Vec2) -> Packet {
@@ -76,6 +79,35 @@ fn potential(wave: &mut Wave, v: impl Fn(Vec2) -> f64) {
             wave.potential[k] = v(wave.position((i, j))) as f32;
         }
     }
+}
+
+/// Write ψ from a function of position, then normalise.
+fn write(wave: &mut Wave, psi: impl Fn(Vec2) -> (f64, f64)) {
+    for j in 0..wave.n {
+        for i in 0..wave.n {
+            let (re, im) = psi(wave.position((i, j)));
+            let k = wave.index((i, j));
+            wave.re[k] = re as f32;
+            wave.im[k] = im as f32;
+        }
+    }
+    let scale = (1.0 / wave.norm()).sqrt() as f32;
+    for k in 0..wave.n * wave.n {
+        wave.re[k] *= scale;
+        wave.im[k] *= scale;
+    }
+}
+
+/// The trap's n = 1 states: angular momentum m = ±1 circulates, and
+/// their real combination is the p orbital along x, which stands still.
+fn trap_state(wave: &mut Wave, m: i32) {
+    write(wave, |p| {
+        let envelope = (-0.5 * TRAP * (p[0] * p[0] + p[1] * p[1])).exp();
+        match m {
+            0 => (p[0] * envelope, 0.0),
+            _ => (p[0] * envelope, m as f64 * p[1] * envelope),
+        }
+    });
 }
 
 fn in_wall(p: Vec2) -> bool {
@@ -117,7 +149,7 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
             let packet = Packet { center: [ORBIT, 0.0], width: [width; 2], wavevector: [0.0, TRAP * ORBIT] };
             (packet, 0.5 * TRAP * TRAP * (wave.extent() / 2.0).powi(2), None)
         }
-        "ground" => {
+        "ground" | "vortex" | "antivortex" | "orbital" => {
             potential(&mut wave, |p| 0.5 * TRAP * TRAP * (p[0] * p[0] + p[1] * p[1]));
             let width = 1.0 / (2.0 * TRAP).sqrt();
             let packet = Packet { center: [0.0; 2], width: [width; 2], wavevector: [0.0; 2] };
@@ -134,12 +166,19 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
         wave.absorb_edges(dt);
     }
     packet.write(&mut wave);
+    match name {
+        "vortex" => trap_state(&mut wave, 1),
+        "antivortex" => trap_state(&mut wave, -1),
+        "orbital" => trap_state(&mut wave, 0),
+        _ => {}
+    }
     let duration = match name {
-        "harmonic" | "ground" => 2.0 * TAU / TRAP,
+        "harmonic" | "ground" | "vortex" | "antivortex" | "orbital" => 2.0 * TAU / TRAP,
         "box" | "free" => 6.0,
         _ => (screen_y - start + TAIL) / SPEED,
     };
-    Experiment { name, wave, packet, kind, dt, duration, screen }
+    let peak = wave.peak();
+    Experiment { name, wave, packet, kind, dt, duration, screen, peak }
 }
 
 /// Fraunhofer intensity for slits of the given width at the given
