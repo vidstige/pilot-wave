@@ -28,7 +28,7 @@ const BACKGROUND: Color = [12, 12, 16];
 const CURVES: f64 = 0.6;
 const TINT: f64 = 0.45;
 /// The top of the line view's bands, over the reference peak.
-const HEADROOM: f64 = 2.0;
+const HEADROOM: f64 = 3.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Style {
