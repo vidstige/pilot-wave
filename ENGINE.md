@@ -139,11 +139,13 @@ particles cross once; with spin a particle may cross back and forth,
 and only its first crossing counts.
 
 **Exact positions.** Since every particle's position is known, the
-measures can ask things no laboratory can: whether any particle ever
-crossed the axis of symmetry (`CrossedAxis`), whether the particles
-that tunnelled were the ones at the front of the packet
+sanity checks can ask things no laboratory can: whether the
+particles that tunnelled were the ones at the front of the packet
 (`ArrivedFromFront`), how far each one moved (`Moved`), and whether
 the ensemble's spread matches the field's (`Spread`, `FieldSpread`).
+The double slit's trails show every particle keeping to its own side
+of the axis, but that is not expected, since no detector could see
+it.
 
 ## Decisions
 
@@ -164,6 +166,12 @@ the ensemble's spread matches the field's (`Spread`, `FieldSpread`).
   wall must be soft.
 - **First crossings on the screen**, so arrival-time distributions are
   the Bohmian first-arrival ones.
+- **Expect only what a detector records.** The wavefunction is never
+  observed, so the experiments' expectations are on the particles:
+  where they land, how many, when. The field's current and the closed
+  form are drawn beside the arrivals for the eye. Only the sanity
+  checks look at the field, where they test the solver itself, and
+  say "field:" when they do.
 - **Experiments as data** with the source and potential as named
   functions in the experiment's file rather than enums of shapes: the
   file reads top to bottom as the setup, and nothing in the framework

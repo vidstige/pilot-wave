@@ -90,7 +90,7 @@ density should not change either.",
                 tolerance: 0.001,
             },
             Expectation {
-                what: "probability left in the field",
+                what: "field: probability left",
                 measure: Measure::Norm,
                 expected: 1.0,
                 tolerance: 0.0001,

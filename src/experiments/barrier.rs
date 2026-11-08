@@ -86,12 +86,6 @@ transmission.",
                 tolerance: 0.02,
             },
             Expectation {
-                what: "probability through the barrier, likewise",
-                measure: Measure::Through,
-                expected,
-                tolerance: 0.02,
-            },
-            Expectation {
                 what: "fraction of the transmitted particles that started in the front of the packet",
                 measure: Measure::ArrivedFromFront,
                 expected: 1.0,

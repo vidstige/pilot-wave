@@ -32,14 +32,14 @@ pub fn single_slit() -> Experiment {
         summary: "\
 A packet 6 wide across and 2 long heads up at speed 2π towards a wall \
 0.4 thick at y = 0 with one slit 2 wavelengths wide; a screen at \
-y = 30 counts what comes through. The current through the screen \
-should follow the Fraunhofer pattern sinc²(πa sinθ) cos²θ, with its \
-first zeros at sinθ = ±1/2, x = ±17.2 on the screen, and the \
-particles should land where the current says. Every particle is an \
-independent run of the one-particle experiment, since they share the \
-field and never interact, so one run with many particles is many \
-runs with one; the arrivals are recorded in order so the pattern can \
-be watched building up one particle at a time.",
+y = 30 counts what comes through. The arrivals along the screen, the \
+only thing a detector records, should follow the Fraunhofer pattern \
+sinc²(πa sinθ) cos²θ, with its first zeros at sinθ = ±1/2, x = ±17.2 \
+on the screen. Every particle is an independent run of the \
+one-particle experiment, since they share the field and never \
+interact, so one run with many particles is many runs with one; the \
+arrivals are recorded in order so the pattern can be watched \
+building up one particle at a time.",
         realisation: Realisation {
             particle: "electron",
             mass: ELECTRON_MASS,
@@ -65,28 +65,16 @@ over a thousand wavelengths, so their pattern sits at angles a thousand times sm
                 tolerance: 0.01,
             },
             Expectation {
-                what: "probability through the screen, likewise",
-                measure: Measure::Through,
-                expected: 0.133,
-                tolerance: 0.01,
+                what: "rms gap between the arrivals and Fraunhofer, of the peak",
+                measure: Measure::ArrivalsVsTheory,
+                expected: 0.0,
+                tolerance: 0.04,
             },
             Expectation {
-                what: "rms gap between the current and Fraunhofer, of the peak",
-                measure: Measure::CurrentVsTheory,
+                what: "arrivals at the first zero of sinc², x = 17.2, of the peak",
+                measure: Measure::ArrivalsAt { x: FIRST_ZERO },
                 expected: 0.0,
                 tolerance: 0.03,
-            },
-            Expectation {
-                what: "rms gap between the arrivals and the current, of the peak",
-                measure: Measure::ArrivalsVsCurrent,
-                expected: 0.0,
-                tolerance: 0.03,
-            },
-            Expectation {
-                what: "current at the first zero of sinc², x = 17.2, of the peak",
-                measure: Measure::CurrentAt { x: FIRST_ZERO },
-                expected: 0.0,
-                tolerance: 0.02,
             },
         ],
     }

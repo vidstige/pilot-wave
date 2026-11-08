@@ -63,12 +63,6 @@ fn flight(
             expected: spread(DURATION, 1.0),
             tolerance: 0.03,
         },
-        Expectation {
-            what: "spread of the field across the motion, likewise",
-            measure: Measure::FieldSpread { axis: 0 },
-            expected: spread(DURATION, 1.0),
-            tolerance: 0.01,
-        },
     ]);
     Experiment {
         name,
@@ -121,13 +115,19 @@ probability stays 1.",
                 tolerance: 0.08,
             },
             Expectation {
-                what: "spread of the field along the motion, likewise",
-                measure: Measure::FieldSpread { axis: 1 },
-                expected: spread(DURATION, effective_mass(SPEED, DX)),
-                tolerance: 0.03,
+                what: "field: spread of the density across the motion, closed form",
+                measure: Measure::FieldSpread { axis: 0 },
+                expected: spread(DURATION, 1.0),
+                tolerance: 0.01,
             },
             Expectation {
-                what: "probability left in the field",
+                what: "field: spread of the density along the motion, with the grid's mass",
+                measure: Measure::FieldSpread { axis: 1 },
+                expected: spread(DURATION, effective_mass(SPEED, DX)),
+                tolerance: 0.01,
+            },
+            Expectation {
+                what: "field: probability left",
                 measure: Measure::Norm,
                 expected: 1.0,
                 tolerance: 0.001,
@@ -144,12 +144,6 @@ probability stays 1.",
                 expected: -START / group_velocity(SPEED, DX),
                 tolerance: 0.02,
             },
-            Expectation {
-                what: "rms gap between the arrivals and the current, of the peak",
-                measure: Measure::ArrivalsVsCurrent,
-                expected: 0.0,
-                tolerance: 0.03,
-            },
         ],
     )
 }
@@ -161,8 +155,7 @@ pub fn mirror() -> Experiment {
 The same packet meets a hard wall across the plane at y = 5 and comes \
 back: after a time of 4 its mean y should be the mirror image of the \
 free flight's in the wall, with the spread across the motion \
-as in free flight, nothing lost through the wall and no particle \
-beyond it. Where the incoming and the reflected wave overlap they \
+as in free flight, and no particle beyond it. Where the incoming and the reflected wave overlap they \
 make a standing wave, and the particles slow and turn in its \
 near-nodes rather than crossing them.",
         vec![band(1, WALL, WALL + 0.4)],
@@ -173,12 +166,6 @@ near-nodes rather than crossing them.",
                 measure: Measure::Mean { axis: 1 },
                 expected: 2.0 * WALL - centre(DURATION),
                 tolerance: 0.1,
-            },
-            Expectation {
-                what: "probability left in the field",
-                measure: Measure::Norm,
-                expected: 1.0,
-                tolerance: 0.005,
             },
             Expectation {
                 what: "fraction of the particles beyond the wall",

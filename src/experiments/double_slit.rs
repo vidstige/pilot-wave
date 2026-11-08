@@ -14,6 +14,9 @@ const TAIL: f64 = 25.0;
 /// minimum, d sinθ = 1/2, of slits 4 apart 29.8 before the screen.
 const FIRST_MAXIMUM: f64 = 7.7;
 const FIRST_MINIMUM: f64 = 3.8;
+/// Half an order on the screen: the first maximum is sought within
+/// this of where it should be.
+const HALF_ORDER: f64 = 3.5;
 
 fn theory(x: f64) -> f64 {
     fraunhofer(x, SCREEN - THICKNESS / 2.0, &[-SEPARATION / 2.0, SEPARATION / 2.0], WIDTH)
@@ -28,9 +31,11 @@ The same beam as the single slit meets a wall with two slits 1 wide and \
 cos²(πd sinθ) fringes under the sinc²(πa sinθ) envelope, orders at \
 sinθ = m/4, so maxima at x = 0, ±7.7, ±17 and minima between them, \
 and the particles should land on the bright fringes and avoid the \
-dark ones, each one going through one slit or the other and never \
-crossing the axis of symmetry. The arrivals are recorded in order, so \
-the fringes can be watched building up one particle at a time.",
+dark ones. In the trails each one goes through one slit or the other \
+and never crosses the axis of symmetry, which no detector could see \
+without destroying the fringes, so it is not expected, only shown. \
+The arrivals are recorded in order, so the fringes can be watched \
+building up one particle at a time.",
         realisation: Realisation {
             particle: "electron",
             mass: ELECTRON_MASS,
@@ -57,40 +62,22 @@ are 0.18 mrad apart against our 0.25 rad",
                 tolerance: 0.01,
             },
             Expectation {
-                what: "probability through the screen, likewise",
-                measure: Measure::Through,
-                expected: 0.126,
-                tolerance: 0.01,
-            },
-            Expectation {
-                what: "rms gap between the current and Fraunhofer, of the peak",
-                measure: Measure::CurrentVsTheory,
+                what: "rms gap between the arrivals and Fraunhofer, of the peak",
+                measure: Measure::ArrivalsVsTheory,
                 expected: 0.0,
-                tolerance: 0.035,
+                tolerance: 0.05,
             },
             Expectation {
-                what: "rms gap between the arrivals and the current, of the peak",
-                measure: Measure::ArrivalsVsCurrent,
-                expected: 0.0,
-                tolerance: 0.03,
-            },
-            Expectation {
-                what: "x of the first-order maximum, d sinθ = 1",
-                measure: Measure::MaximumNear { x: FIRST_MAXIMUM },
+                what: "x of the first-order maximum of the arrivals, d sinθ = 1",
+                measure: Measure::ArrivalsPeakNear { x: FIRST_MAXIMUM, within: HALF_ORDER },
                 expected: FIRST_MAXIMUM,
                 tolerance: 0.8,
             },
             Expectation {
-                what: "current at the first minimum, d sinθ = 1/2, of the peak",
-                measure: Measure::CurrentAt { x: FIRST_MINIMUM },
+                what: "arrivals at the first minimum, d sinθ = 1/2, of the peak",
+                measure: Measure::ArrivalsAt { x: FIRST_MINIMUM },
                 expected: 0.0,
                 tolerance: 0.1,
-            },
-            Expectation {
-                what: "fraction of the particles that ever crossed the axis of symmetry",
-                measure: Measure::CrossedAxis,
-                expected: 0.0,
-                tolerance: 0.0001,
             },
         ],
     }

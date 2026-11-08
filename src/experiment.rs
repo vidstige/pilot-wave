@@ -54,40 +54,39 @@ impl Realisation {
     }
 }
 
+/// What a run is asked about. An experiment expects only what a
+/// detector could record, the particles' positions, counts and times;
+/// the measures of the field are for the sanity checks of the solver.
 #[derive(Clone)]
 pub enum Measure {
-    /// Fraction of the particles that crossed the screen, and the
-    /// probability that did.
+    /// Fraction of the particles that crossed the screen.
     Arrived,
-    Through,
     /// Fraction of the particles that first crossed the screen after
     /// the given time.
     ArrivedAfter { time: f64 },
     /// Mean time of the first crossings.
     MeanArrivalTime,
-    /// Rms gap between the screen's current and the theory, both
-    /// scaled to the same total, as a fraction of the current's peak.
-    CurrentVsTheory,
-    /// Rms gap between the arrivals and the current, likewise.
-    ArrivalsVsCurrent,
-    /// The current at x on the screen, as a fraction of its peak.
-    CurrentAt { x: f64 },
-    /// Where the current's local maximum nearest x lies.
-    MaximumNear { x: f64 },
+    /// Rms gap between the arrivals along the screen and the theory,
+    /// both scaled to the same total, as a fraction of the arrivals'
+    /// peak.
+    ArrivalsVsTheory,
+    /// The arrivals in the bin at x, as a fraction of the peak bin.
+    ArrivalsAt { x: f64 },
+    /// Where the arrivals peak within the given distance of x.
+    ArrivalsPeakNear { x: f64, within: f64 },
     /// Fraction of the arrived particles that started in the front of
     /// the packet: among the leading share, along y, of all the starts,
     /// that share being the arrived fraction.
     ArrivedFromFront,
-    /// Fraction of the particles that ever crossed the axis x = 0.
-    CrossedAxis,
     /// Mean and standard deviation of the particles' coordinate along
-    /// the axis at the end, and the standard deviation of the field's.
+    /// the axis at the end.
     Mean { axis: usize },
     Spread { axis: usize },
-    FieldSpread { axis: usize },
     /// Median distance the particles moved from where they started.
     Moved,
-    /// Probability left in the field at the end.
+    /// Field: standard deviation of the density along the axis, and
+    /// the probability left, at the end.
+    FieldSpread { axis: usize },
     Norm,
 }
 

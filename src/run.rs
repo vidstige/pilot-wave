@@ -18,8 +18,6 @@ pub struct Outcome {
     pub screen: Option<Screen>,
     /// Time-integrated density, for drawing trails over.
     pub glow: Vec<f32>,
-    /// Which particles ever crossed the axis x = 0.
-    pub crossed: Vec<bool>,
 }
 
 /// Run to the experiment's duration, calling `frame` with the field,
@@ -38,7 +36,6 @@ pub fn run(
     let mut particles = Particles::new(start.clone());
     let mut screen = e.screen.map(|y| Screen::new(y, e.extent() / 2.0, BINS, start.len()));
     let mut glow = vec![0.0; wave.n * wave.n];
-    let mut crossed = vec![false; start.len()];
     let dt = e.dt();
     let steps = (e.duration / dt).ceil() as usize;
     frame(&wave, &particles, 0);
@@ -50,9 +47,6 @@ pub fn run(
             screen.record(wave.time, &before, &particles.positions);
             screen.integrate(&wave, dt);
         }
-        for ((c, s), p) in crossed.iter_mut().zip(&start).zip(&particles.positions) {
-            *c |= (p[0] < 0.0) != (s[0] < 0.0);
-        }
         if step % GLOW_EVERY == 0 {
             for (g, k) in glow.iter_mut().zip(0..) {
                 *g += wave.density(k);
@@ -60,7 +54,7 @@ pub fn run(
         }
         frame(&wave, &particles, step);
     }
-    Outcome { wave, particles, start, screen, glow, crossed }
+    Outcome { wave, particles, start, screen, glow }
 }
 
 /// Scale a curve to the total of another.
@@ -101,30 +95,24 @@ fn field_spread(wave: &Wave, axis: usize) -> f64 {
 fn on_screen(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
     let screen = o.screen.as_ref().expect("this measure needs a screen");
     let runs = o.particles.positions.len() as f64;
+    let hits = &screen.hits;
+    let peak = hits.iter().cloned().fold(0.0, f64::max);
     match measure {
         Measure::Arrived => fraction(&screen.arrived),
-        Measure::Through => screen.flux.iter().sum(),
         Measure::ArrivedAfter { time } => {
             screen.arrivals.iter().filter(|(t, _)| t > time).count() as f64 / runs
         }
         Measure::MeanArrivalTime => {
             screen.arrivals.iter().map(|(t, _)| t).sum::<f64>() / screen.arrivals.len() as f64
         }
-        Measure::CurrentVsTheory => {
+        Measure::ArrivalsVsTheory => {
             let theory: Vec<f64> = (0..BINS).map(|b| e.theory(screen.x(b))).collect();
-            rms_gap(&screen.flux, &scaled_to(&theory, &screen.flux)) / screen.peak()
+            rms_gap(hits, &scaled_to(&theory, hits)) / peak
         }
-        Measure::ArrivalsVsCurrent => {
-            rms_gap(&screen.flux, &scaled_to(&screen.hits, &screen.flux)) / screen.peak()
-        }
-        Measure::CurrentAt { x } => screen.flux[screen.bin_of(*x)] / screen.peak(),
-        Measure::MaximumNear { x } => {
-            let f = &screen.flux;
-            let peaks = (1..BINS - 1).filter(|&b| f[b] > f[b - 1] && f[b] >= f[b + 1]);
-            let nearest = peaks.min_by(|&a, &b| {
-                (screen.x(a) - x).abs().total_cmp(&(screen.x(b) - x).abs())
-            });
-            screen.x(nearest.expect("a current with a maximum"))
+        Measure::ArrivalsAt { x } => hits[screen.bin_of(*x)] / peak,
+        Measure::ArrivalsPeakNear { x, within } => {
+            let near = (0..BINS).filter(|&b| (screen.x(b) - x).abs() < *within);
+            screen.x(near.max_by(|&a, &b| hits[a].total_cmp(&hits[b])).expect("bins near x"))
         }
         Measure::ArrivedFromFront => arrived_from_front(&o.start, &screen.arrived),
         _ => unreachable!(),
@@ -136,7 +124,6 @@ pub fn measure(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
     let n = runs.len() as f64;
     let mean = |axis: usize| runs.iter().map(|p| p[axis]).sum::<f64>() / n;
     match measure {
-        Measure::CrossedAxis => fraction(&o.crossed),
         Measure::Mean { axis } => mean(*axis),
         Measure::Spread { axis } => {
             let m = mean(*axis);

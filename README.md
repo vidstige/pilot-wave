@@ -87,6 +87,15 @@ experiment against published work. Every expectation is listed by
 `describe`, measured by `run`, and the tables below give the measured
 values.
 
+The wavefunction is never observed; a detector records particles,
+their positions, counts and times, and nothing else. So the
+experiments expect only such things: where the particles land, how
+many, and when. The field's current and the closed form are still
+drawn beside the arrivals in the screen plots, for the eye. The
+sanity checks are allowed to look at the field, since some of them
+test the solver itself; those expectations say "field:" in their
+names.
+
 ### Sanity checks
 
 `free`: a packet 2 wide starts at y = −15 and heads up at speed 2π for
@@ -118,8 +127,9 @@ has moved exactly 8.
 and 1.2 times its energy high across the whole plane, the textbook
 one-dimensional problem: T = 1/(1 + V² sinh²(κa)/4E(V − E)) with
 κ = √(2(V − E)), 0.227 at k = 2π and 0.230 averaged over the packet's
-spread of wavenumbers. On the grid it comes out a few percent less.
-Which particles tunnel is decided by where they start: trajectories
+spread of wavenumbers. On the grid it comes out a few percent less
+(0.220 of the probability crosses, 0.215 of the particles). Which
+particles tunnel is decided by where they start: trajectories
 in one dimension cannot cross, so the ones that get through are
 exactly the ones that started at the front of the packet.
 
@@ -136,19 +146,18 @@ done
 |---|---|---|
 | free: mean y at the end, −15 + 4·2π at the grid's speed | 10.008 ± 0.05 | 9.996 |
 | free: spread of the particles across the motion | 2.236 ± 0.03 | 2.244 |
-| free: spread of the field across the motion | 2.236 ± 0.01 | 2.2363 |
+| free, field: spread of the density across the motion | 2.236 ± 0.01 | 2.2363 |
 | free: spread of the particles along the motion, with the grid's mass | 2.225 ± 0.08 | 2.281 |
-| free: spread of the field along the motion, likewise | 2.225 ± 0.03 | 2.2257 |
+| free, field: spread of the density along the motion, likewise | 2.225 ± 0.01 | 2.2257 |
 | free: mean arrival time at the screen | 2.399 ± 0.02 | 2.405 |
-| free: fraction through the screen, probability left | 1 ± 0.001 | 0.9999, 1.0003 |
+| free: fraction through the screen; field: probability left | 1 ± 0.001 | 0.9999, 1.0003 |
 | mirror: mean y at the end, mirrored in the wall | −0.008 ± 0.1 | 0.026 |
-| mirror: fraction beyond the wall, probability left | 0 ± 0.0001, 1 ± 0.005 | 0.0000, 1.0009 |
+| mirror: fraction beyond the wall | 0 ± 0.0001 | 0.0000 |
 | ground: median distance moved over a period | 0 ± 0.001 | 0.0000 |
 | ground: spread along x, the ground state's width | 1 ± 0.02 | 1.003 |
 | coherent: mean x after half a period | −4 ± 0.05 | −3.993 |
 | coherent: median distance moved, twice the swing | 8 ± 0.05 | 7.9998 |
 | barrier: fraction of particles through, averaged textbook T | 0.230 ± 0.02 | 0.215 |
-| barrier: probability through, likewise | 0.230 ± 0.02 | 0.220 |
 | barrier: fraction of the transmitted that started in the front | 1 ± 0.01 | 1.000 |
 
 ### Single slit
@@ -168,24 +177,19 @@ obliquity factor, is the same.
 
 | expectation | expected | measured |
 |---|---|---|
-| fraction through the screen, the beam's share across the slit | 0.133 ± 0.010 | 0.1264 |
-| probability through the screen, likewise | 0.133 ± 0.010 | 0.1271 |
-| rms gap between the current and Fraunhofer, of the peak | 0 ± 0.03 | 0.0177 |
-| rms gap between the arrivals and the current, of the peak | 0 ± 0.03 | 0.0257 |
-| current at the first zero of sinc², x = 17.2, of the peak | 0 ± 0.02 | 0.0095 |
-
-The arrived fraction sits 5% under the geometric share because the
-slit's edges diffract some of the wave back; the current's first
-minimum falls to 1% of the peak at the predicted place.
+| fraction through the screen, the beam's share across the slit, erf(1/6√2) | 0.133 ± 0.010 | 0.1265 |
+| rms gap between the arrivals and Fraunhofer, of the peak | 0 ± 0.04 | 0.028 |
+| arrivals at the first zero of sinc², x = 17.2, of the peak | 0 ± 0.03 | 0.011 |
 
 ### Double slit
 
 The same beam meets a wall with two slits 1 wide and 4 apart, centre
 to centre: cos²(πd sinθ) fringes under the sinc²(πa sinθ) envelope,
 orders at sinθ = m/4. Each particle goes through one slit or the
-other and never crosses the axis of symmetry, yet the ensemble lands
-on the fringes, which build up one particle at a time as in the
-electron films. The realisation is again the 600 eV electron of Bach
+other and never crosses the axis of symmetry, which no detector could
+see without destroying the fringes, so it is shown in the trails and
+not expected; the ensemble lands on the fringes, which build up one
+particle at a time as in the electron films. The realisation is again the 600 eV electron of Bach
 et al. (2013), whose slits were 62 nm wide and 272 nm apart: d/a = 4.4
 against our 4, so about as many fringes fit under the envelope, but
 theirs are 0.18 mrad apart against our 0.25 rad.
@@ -195,12 +199,9 @@ theirs are 0.18 mrad apart against our 0.25 rad.
 | expectation | expected | measured |
 |---|---|---|
 | fraction through the screen, the beam's share across both slits | 0.126 ± 0.010 | 0.1184 |
-| probability through the screen, likewise | 0.126 ± 0.010 | 0.1195 |
-| rms gap between the current and Fraunhofer, of the peak | 0 ± 0.035 | 0.0282 |
-| rms gap between the arrivals and the current, of the peak | 0 ± 0.03 | 0.0225 |
-| x of the first-order maximum, d sinθ = 1 | 7.7 ± 0.8 | 7.6 |
-| current at the first minimum, d sinθ = 1/2, of the peak | 0 ± 0.1 | 0.019 |
-| fraction of the particles that ever crossed the axis of symmetry | 0 ± 0.0001 | 0.0000 |
+| rms gap between the arrivals and Fraunhofer, of the peak | 0 ± 0.05 | 0.038 |
+| x of the first-order maximum of the arrivals, d sinθ = 1 | 7.7 ± 0.8 | 7.6 |
+| arrivals at the first minimum, d sinθ = 1/2, of the peak | 0 ± 0.1 | 0.025 |
 
 ## Spin without a magnetic field
 
