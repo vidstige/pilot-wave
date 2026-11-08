@@ -23,6 +23,11 @@ impl Screen {
         (0.0..1.0).contains(&t).then(|| (t * self.bins as f64) as usize)
     }
 
+    /// The bin holding x, which must lie on the screen.
+    pub fn bin_of(&self, x: f64) -> usize {
+        self.bin(x).expect("x on the screen")
+    }
+
     /// Count particles that crossed the line upward this step.
     pub fn record(&mut self, time: f64, before: &[Vec2], after: &[Vec2]) {
         for (a, b) in before.iter().zip(after) {

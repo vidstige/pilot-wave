@@ -80,9 +80,14 @@ pub fn measure(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
         Measure::ArrivalsVsCurrent => {
             rms_gap(&screen.flux, &scaled_to(&screen.hits, &screen.flux)) / screen.peak()
         }
-        Measure::CurrentAt { x } => {
-            let bin = ((x + screen.half) / (2.0 * screen.half) * BINS as f64) as usize;
-            screen.flux[bin] / screen.peak()
+        Measure::CurrentAt { x } => screen.flux[screen.bin_of(*x)] / screen.peak(),
+        Measure::MaximumNear { x } => {
+            let f = &screen.flux;
+            let peaks = (1..BINS - 1).filter(|&b| f[b] > f[b - 1] && f[b] >= f[b + 1]);
+            let nearest = peaks.min_by(|&a, &b| {
+                (screen.x(a) - x).abs().total_cmp(&(screen.x(b) - x).abs())
+            });
+            screen.x(nearest.expect("a current with a maximum"))
         }
     }
 }

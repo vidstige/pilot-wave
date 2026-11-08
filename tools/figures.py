@@ -60,8 +60,9 @@ def buildup(axes, name: str, counts: list, reach: float):
         ax.set_title(f"first {count} arrivals" if count < len(x) else f"all {len(x)} arrivals", fontsize=10)
 
 
-def single_slit() -> plt.Figure:
-    name, extent, reach = "single-slit", 102.4, 40
+def slit(name: str) -> plt.Figure:
+    """Frames, trails, the build-up and the screen of a slit experiment."""
+    extent, reach = 102.4, 40
     figure = plt.figure(figsize=(12, 10), layout="constrained")
     top, middle, bottom = figure.subfigures(3, 1, height_ratios=[1.6, 0.5, 1])
     axes = top.subplots(1, 3)
@@ -73,7 +74,10 @@ def single_slit() -> plt.Figure:
     return figure
 
 
-FIGURES = {"single-slit": single_slit}
+FIGURES = {
+    "single-slit": lambda: slit("single-slit"),
+    "double-slit": lambda: slit("double-slit"),
+}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or FIGURES:

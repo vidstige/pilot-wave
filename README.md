@@ -96,3 +96,26 @@ obliquity factor, is the same.
 The arrived fraction sits 5% under the geometric share because the
 slit's edges diffract some of the wave back; the current's first
 minimum falls to 1% of the peak at the predicted place.
+
+### Double slit
+
+The same beam meets a wall with two slits 1 wide and 4 apart, centre
+to centre: cos²(πd sinθ) fringes under the sinc²(πa sinθ) envelope,
+orders at sinθ = m/4. Each particle goes through one slit or the
+other and never crosses the axis of symmetry, yet the ensemble lands
+on the fringes, which build up one particle at a time as in the
+electron films. The realisation is again the 600 eV electron of Bach
+et al. (2013), whose slits were 62 nm wide and 272 nm apart: d/a = 4.4
+against our 4, so about as many fringes fit under the envelope, but
+theirs are 0.18 mrad apart against our 0.25 rad.
+
+![Double slit: the field, the trails, the build-up and the screen](images/double-slit.png)
+
+| expectation | expected | measured |
+|---|---|---|
+| fraction through the screen, the beam's share across both slits | 0.126 ± 0.010 | 0.1184 |
+| arrived fraction minus the probability through the screen | 0 ± 0.005 | −0.0011 |
+| rms gap between the current and Fraunhofer, of the peak | 0 ± 0.035 | 0.0282 |
+| rms gap between the arrivals and the current, of the peak | 0 ± 0.03 | 0.0225 |
+| x of the first-order maximum, d sinθ = 1 | 7.7 ± 0.8 | 7.6 |
+| current at the first minimum, d sinθ = 1/2, of the peak | 0 ± 0.1 | 0.019 |

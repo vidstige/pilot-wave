@@ -68,6 +68,8 @@ pub enum Measure {
     ArrivalsVsCurrent,
     /// The current at x on the screen, as a fraction of its peak.
     CurrentAt { x: f64 },
+    /// Where the current's local maximum nearest x lies.
+    MaximumNear { x: f64 },
 }
 
 pub struct Expectation {
