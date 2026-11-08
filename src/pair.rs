@@ -1,8 +1,7 @@
 //! Two particles on a line as one point in the plane: ψ(x₁, x₂) on
 //! the solver's grid, x₁ along i and x₂ along j. With unit masses the
 //! grid's Laplacian is both particles' kinetic energy. States, the
-//! pair potential, walls on the line, marginals and imaginary-time
-//! relaxation. No I/O.
+//! pair potential, marginals and imaginary-time relaxation. No I/O.
 use crate::grid::Vec2;
 use crate::wave::Wave;
 
@@ -88,19 +87,6 @@ pub fn interaction(wave: &mut Wave, u: impl Fn(f64) -> f64) {
             let p = wave.position((i, j));
             let k = wave.index((i, j));
             wave.potential[k] += u(p[0] - p[1]) as f32;
-        }
-    }
-}
-
-/// A hard wall on the line: zero wherever either particle is in it.
-pub fn wall(wave: &mut Wave, inside: impl Fn(f64) -> bool) {
-    for j in 0..wave.n {
-        for i in 0..wave.n {
-            let p = wave.position((i, j));
-            if inside(p[0]) || inside(p[1]) {
-                let k = wave.index((i, j));
-                wave.keep[k] = 0.0;
-            }
         }
     }
 }
