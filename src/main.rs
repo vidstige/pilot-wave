@@ -14,7 +14,7 @@ fn main() -> ExitCode {
     match args.get(1).map(String::as_str) {
         Some("list") => {
             for e in experiments::all() {
-                println!("{:<14} {}", e.name, e.summary.split('.').next().unwrap_or(""));
+                println!("{:<14} {}", e.name, e.summary.split(". ").next().unwrap_or(""));
             }
             ExitCode::SUCCESS
         }
