@@ -3,9 +3,10 @@ use std::f64::consts::TAU;
 use std::fs;
 
 use pilot_wave::encounter::{self, Encounter};
+use pilot_wave::entangle::{self, BIN};
 use pilot_wave::experiment::{
-    experiment, mean_transmission, pattern, transmission, Experiment, Space, BARRIER_HEIGHT,
-    BARRIER_WIDTH, ENERGY, SLIT_SEPARATION, SPEED,
+    experiment, mean_transmission, pattern, transmission, twin, Experiment, Space,
+    BARRIER_HEIGHT, BARRIER_WIDTH, ENERGY, SLIT_SEPARATION, SPEED,
 };
 use pilot_wave::grid::Vec2;
 use pilot_wave::image::{self, Image};
@@ -44,6 +45,8 @@ const REPORT_EVERY: f64 = 1.0;
 /// Local maxima on the screen below this fraction of the largest are
 /// taken as noise rather than fringes.
 const FRINGE_FLOOR: f64 = 0.05;
+/// Runs whose paths are written out with and without the wall.
+const FOLLOW: usize = 30;
 
 type Trail = Vec<Vec2>;
 
@@ -336,6 +339,127 @@ fn print_separations(e: &Experiment, separations: &[(f64, f64, f64)], end: &[Vec
     );
 }
 
+/// The correlation of x₁ and x₂ and their mutual information, over
+/// the runs and in the field, at each report.
+fn print_entanglement(name: &str, measures: &[(f64, [f64; 4])]) {
+    for (t, [runs, field, runs_mi, field_mi]) in measures {
+        println!(
+            "{name}: t = {t:3.1}, correlation {runs:.4} over the runs, {field:.4} in the \
+             field, mutual information {runs_mi:.4} and {field_mi:.4} nats"
+        );
+    }
+}
+
+/// Rows of t, run, then x₁ and x₂ with the wall and without.
+fn paired_rows(t: f64, [a, b]: [&[Vec2]; 2]) -> String {
+    let row = |k: usize| format!("{t},{k},{},{},{},{}\n", a[k][0], a[k][1], b[k][0], b[k][1]);
+    (0..a.len().min(FOLLOW)).map(row).collect()
+}
+
+fn print_moved(name: &str, t: f64, [a, b]: [&[Vec2]; 2]) {
+    let (largest, median) = entangle::moved(a, b, 0);
+    println!("{name}: t = {t:3.1}, x1 moved by the wall: largest {largest:.4}, median {median:.4}");
+}
+
+/// Densities of each coordinate with the wall and without.
+type Marginals = [[Vec<f64>; 2]; 2];
+
+/// How much the wall on particle 2 changed the distribution of each
+/// coordinate: the field's marginal against the twin's, and the runs'
+/// histogram against the twin runs'.
+fn print_paired(name: &str, marginals: &Marginals, histograms: &Marginals) {
+    let [m, n] = marginals;
+    let [h, g] = histograms;
+    for axis in 0..2 {
+        let peak = m[axis].iter().cloned().fold(0.0, f64::max);
+        let pairs = m[axis].iter().zip(&n[axis]);
+        let gap = pairs.map(|(p, q)| (p - q).abs()).fold(0.0, f64::max) / peak;
+        let (most, error) = entangle::largest_difference(&h[axis], &g[axis]);
+        let (chi, bins) = entangle::chi_square(&h[axis], &g[axis]);
+        println!(
+            "{name}: x{} density with and without the wall differs by at most {gap:.1e} of \
+             its peak; runs in bins of {BIN}: largest difference {most:.4}, statistical \
+             error {error:.4}, chi-square {chi:.1} over {bins} bins",
+            axis + 1
+        );
+    }
+}
+
+/// Whether the runs follow the field with the wall and without: χ²
+/// of each coordinate's histogram against the field's marginal.
+fn print_following(name: &str, marginals: &Marginals, histograms: &Marginals, dx: f64) {
+    let runs = histograms[0][0].iter().sum::<f64>() as usize;
+    for axis in 0..2 {
+        let [wall, free] = [0, 1].map(|e| {
+            let expected = entangle::expected(&marginals[e][axis], dx, runs);
+            entangle::goodness(&histograms[e][axis], &expected)
+        });
+        println!(
+            "{name}: x{} of the runs against the field's density: chi-square {:.1} over {} \
+             bins with the wall, {:.1} over {} without",
+            axis + 1, wall.0, wall.1, free.0, free.1
+        );
+    }
+}
+
+/// x, then x₁'s density with the wall and without, then x₂'s.
+fn table(x: impl Fn(usize) -> f64, m: &Marginals, scale: f64) -> String {
+    let row = |i: usize| {
+        let [a, b, c, d] = [&m[0][0], &m[1][0], &m[0][1], &m[1][1]].map(|v| v[i] * scale);
+        format!("{},{a},{b},{c},{d}\n", x(i))
+    };
+    let rows: String = (0..m[0][0].len()).map(row).collect();
+    format!("x,one_wall,one_free,two_wall,two_free\n{rows}")
+}
+
+/// The wall run again beside its twin without the wall, from the same
+/// starting points: how far the wall on particle 2 moved particle 1
+/// in each run, and whether it moved the statistics of x₁ at all.
+fn run_paired(name: &'static str, twin: &'static str, start: &[Vec2], out: &str) {
+    let mut es = [name, twin].map(|n| experiment(n, 0, Kind::Quantum));
+    let mut runs = es.each_ref().map(|e| Particles::new(e.kind, start.to_vec(), &e.wave));
+    let dt = es[0].dt;
+    let steps = (es[0].duration / dt).ceil() as usize;
+    let [per_row, per_report] = [GLOW_EVERY, REPORT_EVERY].map(|t| (t / dt) as usize);
+    let mut rows = String::from("t,run,x1_wall,x2_wall,x1_free,x2_free\n");
+    for step in 0..=steps {
+        if step > 0 {
+            for (e, particles) in es.iter_mut().zip(&mut runs) {
+                e.wave.step(dt);
+                particles.step(&e.wave, dt);
+            }
+        }
+        let ends = runs.each_ref().map(|p| &p.positions[..]);
+        let t = es[0].wave.time;
+        if step % per_row == 0 {
+            rows += &paired_rows(t, ends);
+        }
+        if step % per_report == 0 || step == steps {
+            print_moved(name, t, ends);
+        }
+    }
+    let wave = &es[0].wave;
+    let half = wave.extent() / 2.0;
+    let marginals = es.each_ref().map(|e| pair::marginals(&e.wave));
+    let histogram = |p: &Particles| [0, 1].map(|a| entangle::histogram(&p.positions, a, half));
+    let histograms = runs.each_ref().map(histogram);
+    print_paired(name, &marginals, &histograms);
+    print_following(name, &marginals, &histograms, wave.dx);
+    let [with, without] = es.each_ref().map(|e| e.wave.norm());
+    println!("{name}: probability left {with:.4} with the wall, {without:.4} without");
+    let cell = |i: usize| wave.position((i, 0))[0];
+    let bin = |b: usize| (b as f64 + 0.5) * BIN - half;
+    let scale = 1.0 / (start.len() as f64 * BIN);
+    let files = [
+        ("paired", rows),
+        ("marginals", table(cell, &marginals, 1.0)),
+        ("histograms", table(bin, &histograms, scale)),
+    ];
+    for (file, text) in files {
+        fs::write(format!("{out}/{name}_{file}.csv"), text).expect("write table");
+    }
+}
+
 /// Two particles on a line: frames of configuration space over the
 /// line, trails, and the checks.
 fn run_line(mut e: Experiment, count: usize, out: &str) {
@@ -348,6 +472,7 @@ fn run_line(mut e: Experiment, count: usize, out: &str) {
     let mut encounter = Encounter::new(&start);
     let mut near = [0.0f64; 2];
     let mut separations = vec![];
+    let mut measures = vec![];
     let mut glow = vec![0.0; e.wave.n * e.wave.n];
     let steps = (e.duration / e.dt).ceil() as usize;
     let [per_frame, per_glow, per_report] =
@@ -373,6 +498,7 @@ fn run_line(mut e: Experiment, count: usize, out: &str) {
         if step % per_report == 0 {
             let (mean, spread) = encounter::spread(positions);
             separations.push((e.wave.time, mean, spread));
+            measures.push((e.wave.time, entangle::measure(&e.wave, positions)));
         }
         if step % per_frame == 0 || step == steps {
             let image = line_frame(&e, positions, &trails[0]);
@@ -390,6 +516,13 @@ fn run_line(mut e: Experiment, count: usize, out: &str) {
     print_encounter(&e, &encounter, near, end);
     if name.starts_with("molecule") {
         print_separations(&e, &separations, end);
+    }
+    if name.contains("entangled") {
+        measures.push((e.wave.time, entangle::measure(&e.wave, end)));
+        print_entanglement(name, &measures);
+    }
+    if let Some(twin) = twin(name) {
+        run_paired(name, twin, &start, out);
     }
 }
 

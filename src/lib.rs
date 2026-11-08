@@ -1,6 +1,7 @@
 //! A deterministic pilot-wave (de Broglie-Bohm) simulation with views.
 pub mod colormap;
 pub mod encounter;
+pub mod entangle;
 pub mod experiment;
 pub mod grid;
 pub mod image;

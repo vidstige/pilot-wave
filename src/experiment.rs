@@ -11,10 +11,11 @@ use crate::pair::{self, Orbital, Symmetry};
 use crate::particles::Kind;
 use crate::wave::{stable_dt, Wave};
 
-pub const NAMES: [&str; 18] = [
+pub const NAMES: [&str; 22] = [
     "free", "double-slit", "single-slit", "barrier", "disc", "harmonic", "ground", "vortex",
     "antivortex", "orbital", "box", "flux-trap", "flux-slit", "fermions", "bosons",
-    "distinguishable", "molecule", "molecule-break",
+    "distinguishable", "molecule", "molecule-break", "entangled", "unentangled",
+    "entangled-wall", "unentangled-wall",
 ];
 pub const SPEED: f64 = TAU;
 pub const ENERGY: f64 = SPEED * SPEED / 2.0;
@@ -75,6 +76,30 @@ pub const KICK: f64 = 2.0;
 pub const BREAK_KICK: f64 = 5.0;
 const MOLECULE_TIME: f64 = 15.0;
 const BREAK_TIME: f64 = 6.0;
+/// The entangled pair on a line twice as long, |x| ≤ 25.6, so that
+/// it flies well apart, in cells half as wide: the widths of |ψ|² in
+/// the pair's centre and in its separation, the wavenumber carrying
+/// each particle away from the other, where the wall only particle 2
+/// feels begins, the force with which it pushes back, and how long it
+/// runs.
+///
+/// The wall is a steep ramp, which turns particle 2 back within half
+/// a unit. Cells held at zero let a few runs step into them, as the
+/// interpolated velocity stays finite up to such cells and is zero
+/// inside, freezing particle 1 with them; a step a hundred high made
+/// ψ fall off within a cell. Where particle 2 turns, the wave coming
+/// back interferes with the wave still coming in in fringes 0.5 to 1
+/// apart, and on cells of 0.1 the runs that crossed them bunched in x₁
+/// where the field did not (χ² of 112 over 56 bins against the
+/// field's marginal at the end); on cells of 0.05 they do not (55
+/// over 57) and each run's x₁ changes as before.
+const EPR_CELLS: usize = 1024;
+const EPR_DX: f64 = 0.05;
+const EPR_WIDTHS: [f64; 2] = [1.0, 0.6];
+const EPR_KICK: f64 = 3.0;
+const EPR_WALL: f64 = 5.0;
+const EPR_FORCE: f64 = 20.0;
+const EPR_TIME: f64 = 3.5;
 
 /// Where the experiment's particles live: one particle in the plane,
 /// or two on a line, the grid then being their configuration space.
@@ -262,6 +287,49 @@ fn line(name: &'static str, kind: Kind) -> Experiment {
     Experiment { name, wave, packet, kind, dt, duration, screen: None, peak, space }
 }
 
+/// The entangled pair: together, far wider in its centre
+/// c = (x₁ + x₂)/2 than in its separation r = x₁ − x₂, and flying
+/// apart, particle 1 to the left: ψ ∝ e^{−c²/4σ_c² − r²/4σ_r² − ikr}.
+/// Unentangled, it is the product of the same two marginal packets.
+fn epr(wave: &mut Wave, entangled: bool) {
+    let ([c, r], k) = (EPR_WIDTHS, EPR_KICK);
+    if entangled {
+        pair::fill(wave, |x1, x2| {
+            let (u, v) = ((x1 + x2) / 2.0, x1 - x2);
+            let a = (-u * u / (4.0 * c * c) - v * v / (4.0 * r * r)).exp();
+            [a * (k * v).cos(), -a * (k * v).sin()]
+        });
+    } else {
+        let width = (c * c + r * r / 4.0).sqrt();
+        let one = Orbital { center: 0.0, width, wavenumber: -k };
+        let two = Orbital { wavenumber: k, ..one };
+        pair::write(wave, one, two, Symmetry::Distinguishable);
+    }
+}
+
+/// The pair flying apart, entangled or not, with or without a wall
+/// far out that only particle 2 feels.
+fn flight(name: &'static str, kind: Kind) -> Experiment {
+    let mut wave = Wave::new(EPR_CELLS, EPR_DX);
+    // The same step with the wall and without, for runs side by side.
+    let dt = stable_dt(EPR_DX, EPR_FORCE * (wave.extent() / 2.0 - EPR_WALL));
+    wave.absorb_edges(dt);
+    if name.ends_with("-wall") {
+        potential(&mut wave, |p| EPR_FORCE * (p[1] - EPR_WALL).max(0.0));
+    }
+    epr(&mut wave, name.starts_with("entangled"));
+    let width = marginal_width(&wave);
+    let wavevector = [-EPR_KICK, EPR_KICK];
+    let packet = Packet { center: [0.0; 2], width: [width; 2], wavevector };
+    let (duration, peak, space) = (EPR_TIME, wave.peak(), Space::Line);
+    Experiment { name, wave, packet, kind, dt, duration, screen: None, peak, space }
+}
+
+/// The same experiment without the wall on particle 2, if it has one.
+pub fn twin(name: &'static str) -> Option<&'static str> {
+    name.strip_suffix("-wall")
+}
+
 pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
     let mut wave = Wave::new(n, DX);
     let half = wave.extent() / 2.0;
@@ -311,6 +379,9 @@ pub fn experiment(name: &'static str, n: usize, kind: Kind) -> Experiment {
             wall(&mut wave, slits(&[-d, d], SLIT_WIDTH));
             wave.flux_line([0.0; 2]);
             (upward([0.0, start], [6.0, 2.0]), 0.0, Some(screen_y))
+        }
+        "entangled" | "unentangled" | "entangled-wall" | "unentangled-wall" => {
+            return flight(name, kind)
         }
         other => panic!("unknown experiment {other}"),
     };
@@ -459,5 +530,71 @@ mod tests {
         let plain = |order| pattern("double-slit", x(order), SCREEN);
         assert!(flux(0.0) < 1e-12 && plain(0.5) < 1e-12);
         assert!(flux(0.5) > 0.9 * plain(0.0));
+    }
+
+    fn largest_gap(a: &[f64], b: &[f64]) -> f64 {
+        let peak = a.iter().cloned().fold(0.0, f64::max);
+        a.iter().zip(b).map(|(p, q)| (p - q).abs()).fold(0.0, f64::max) / peak
+    }
+
+    #[test]
+    fn entangled_pair_is_correlated_and_its_control_has_its_marginals() {
+        let [e, u] = ["entangled", "unentangled"].map(|n| experiment(n, 0, Kind::Quantum));
+        let [c, r] = EPR_WIDTHS;
+        let rho = (c * c - r * r / 4.0) / (c * c + r * r / 4.0);
+        let correlation = |w: &Wave| crate::entangle::correlation(&crate::entangle::field(w));
+        assert!((correlation(&e.wave) - rho).abs() < 1e-3);
+        assert!(correlation(&u.wave).abs() < 1e-6);
+        let [m, n] = [&e.wave, &u.wave].map(pair::marginals);
+        assert!(largest_gap(&m[0], &n[0]) < 1e-3 && largest_gap(&m[1], &n[1]) < 1e-3);
+    }
+
+    /// Densities of x₁ and x₂ from the scheme's conserved density
+    /// R² + I₋I₊, the imaginary part half a step behind R before the
+    /// step and half a step ahead after it. R² + I² is off by about
+    /// dt H ρ, and where ψ sits on particle 2's wall that error reaches
+    /// x₁'s density too.
+    fn conserved_marginals(wave: &Wave, behind: &[f32]) -> [Vec<f64>; 2] {
+        let n = wave.n;
+        let mut m = [vec![0.0; n], vec![0.0; n]];
+        for k in 0..n * n {
+            let d = (wave.re[k] * wave.re[k] + behind[k] * wave.im[k]) as f64 * wave.dx;
+            m[0][k % n] += d;
+            m[1][k / n] += d;
+        }
+        m
+    }
+
+    /// The pair on a small grid flown for a while, with particle 2's
+    /// wall close by or without it: the marginals, and runs started on
+    /// a row of points across the pair.
+    fn flown(entangled: bool, walled: bool) -> ([Vec<f64>; 2], Vec<Vec2>) {
+        let mut wave = Wave::new(128, 0.1);
+        if walled {
+            potential(&mut wave, |p| EPR_FORCE * (p[1] - 1.0).max(0.0));
+        }
+        epr(&mut wave, entangled);
+        let start = (0..20).map(|i| [0.1 * i as f64 - 1.0, 0.3 - 0.05 * i as f64]).collect();
+        let mut particles = crate::particles::Particles::new(Kind::Quantum, start, &wave);
+        let dt = stable_dt(0.1, EPR_FORCE * 5.4);
+        let mut behind = wave.im.clone();
+        for _ in 0..(1.0 / dt) as usize {
+            behind.clone_from(&wave.im);
+            wave.step(dt);
+            particles.step(&wave, dt);
+        }
+        (conserved_marginals(&wave, &behind), particles.positions)
+    }
+
+    #[test]
+    fn a_wall_on_particle_two_moves_particle_one_only_if_entangled() {
+        for entangled in [true, false] {
+            let [(m, p), (n, q)] = [true, false].map(|w| flown(entangled, w));
+            let gap = largest_gap(&m[0], &n[0]);
+            let other = largest_gap(&m[1], &n[1]);
+            let moved = p.iter().zip(&q).map(|(p, q)| (p[0] - q[0]).abs()).fold(0.0, f64::max);
+            assert!(gap < 1e-4 && other > 0.5, "{entangled} {gap} {other}");
+            assert_eq!(moved > 0.1, entangled, "{moved}");
+        }
     }
 }
