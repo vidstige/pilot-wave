@@ -11,6 +11,8 @@ use crate::{plot, png, view};
 pub const PIXELS: usize = 800;
 pub const FRAME_EVERY: f64 = 0.5;
 const TRAILS: usize = 300;
+/// Particles drawn in a frame, so the field stays visible under them.
+const DOTS: usize = 2000;
 const PLOT: (usize, usize) = (800, 300);
 
 pub fn describe(e: &Experiment) {
@@ -32,7 +34,7 @@ pub fn describe(e: &Experiment) {
 pub fn frame(e: &Experiment, wave: &Wave, particles: &Particles, path: &str) {
     let peak = e.source.peak();
     let mut image = view::field(wave, PIXELS, view::Style::Phase, peak);
-    let heads: Vec<Vec<Vec2>> = particles.positions.iter().map(|p| vec![*p]).collect();
+    let heads: Vec<Vec<Vec2>> = particles.positions.iter().take(DOTS).map(|p| vec![*p]).collect();
     view::particles(&mut image, wave, &heads);
     png::write(path, &image).expect("write frame");
 }
