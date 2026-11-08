@@ -12,6 +12,7 @@ use std::thread;
 
 
 pub type Vec2 = [f64; 2];
+pub type Complex = [f64; 2];
 pub type Index = (usize, usize);
 
 /// Fourth order Laplacian stencil along one axis.
@@ -43,6 +44,22 @@ pub struct Wave {
     /// term ∇×(ρ ŝ)/2 to the current: divergence-free, so the density
     /// evolves as without it, but the trajectories differ.
     pub spin: f64,
+}
+
+/// Speed of a plane wave of wavenumber k on the grid: the group
+/// velocity of the stencil's dispersion, ½ the derivative of its
+/// discrete k², a little below k. At ten cells per wavelength it is
+/// 0.5% low.
+pub fn group_velocity(k: f64, dx: f64) -> f64 {
+    ((8.0 / 3.0) * (k * dx).sin() - (1.0 / 3.0) * (2.0 * k * dx).sin()) / (2.0 * dx)
+}
+
+/// The mass a packet of wavenumber k spreads with on the grid, the
+/// inverse curvature of the stencil's dispersion: 2.5% heavy at ten
+/// cells per wavelength, so a packet spreads that much slower along
+/// its motion than across it.
+pub fn effective_mass(k: f64, dx: f64) -> f64 {
+    1.0 / (0.5 * ((8.0 / 3.0) * (k * dx).cos() - (2.0 / 3.0) * (2.0 * k * dx).cos()))
 }
 
 /// Largest stable step for the given cell size and potential.
@@ -217,6 +234,26 @@ impl Wave {
         }
     }
 
+    pub fn normalise(&mut self) {
+        let s = (1.0 / self.norm()).sqrt() as f32;
+        for v in self.re.iter_mut().chain(&mut self.im) {
+            *v *= s;
+        }
+    }
+
+    /// ψ = f(p) over the grid, zero in walls, normalised.
+    pub fn fill(&mut self, f: impl Fn(Vec2) -> Complex) {
+        for j in 0..self.n {
+            for i in 0..self.n {
+                let k = self.index((i, j));
+                let v = if self.keep[k] == 0.0 { [0.0; 2] } else { f(self.position((i, j))) };
+                self.re[k] = v[0] as f32;
+                self.im[k] = v[1] as f32;
+            }
+        }
+        self.normalise();
+    }
+
     pub fn density(&self, k: usize) -> f32 {
         self.re[k] * self.re[k] + self.im[k] * self.im[k]
     }
@@ -313,6 +350,15 @@ impl Wave {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dispersion_is_exact_for_long_waves_and_slow_at_ten_cells() {
+        assert!((group_velocity(0.01, 0.1) / 0.01 - 1.0).abs() < 1e-6);
+        assert!((effective_mass(0.01, 0.1) - 1.0).abs() < 1e-6);
+        let ratio = group_velocity(std::f64::consts::TAU, 0.1) / std::f64::consts::TAU;
+        assert!((ratio - 0.995).abs() < 0.001, "{ratio}");
+        assert!((effective_mass(std::f64::consts::TAU, 0.1) - 1.025).abs() < 0.001);
+    }
     use crate::packet::Packet;
 
     const DX: f64 = 0.1;

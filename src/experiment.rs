@@ -7,11 +7,8 @@
 //! names the particle and the SI length of one unit, from which the
 //! units of time, energy and speed follow.
 //!
-//! The grid is a plane. It is either the plane one particle moves in,
-//! or the configuration space (x₁, x₂) of two particles on a line:
-//! with unit masses the Laplacian in (x₁, x₂) is both particles'
-//! kinetic energy, so the solver steps it unchanged, and one sampled
-//! point is one run of the two-particle experiment.
+//! Every particle is an independent run of the one-particle
+//! experiment: they share the field and never interact.
 use std::f64::consts::{PI, TAU};
 
 use crate::wave::{stable_dt, Vec2, Wave};
@@ -21,8 +18,6 @@ pub const ENERGY: f64 = SPEED * SPEED / 2.0;
 pub const HBAR: f64 = 1.054_571_817e-34;
 pub const ELECTRON_MASS: f64 = 9.109_383_7e-31;
 pub const ELECTRON_VOLT: f64 = 1.602_176_634e-19;
-/// Two particles on a line count as together within this distance.
-pub const TOGETHER: f64 = 0.5;
 
 /// A rectangle [[x₀, x₁], [y₀, y₁]] of hard wall.
 pub type Rect = [[f64; 2]; 2];
@@ -79,33 +74,21 @@ pub enum Measure {
     CurrentAt { x: f64 },
     /// Where the current's local maximum nearest x lies.
     MaximumNear { x: f64 },
-    /// Two particles on a line: fraction of the runs whose point ever
-    /// crossed the diagonal x₁ = x₂, the particles passing each other.
-    Crossed,
-    /// The most of the runs ever within TOGETHER of each other at one
-    /// time, and the most probability.
-    TogetherPeak,
-    ProbabilityTogetherPeak,
-    /// Fraction of the runs more than d apart at the end, and the
-    /// probability, counting what the sponge took as apart.
-    Apart { beyond: f64 },
-    ProbabilityApart { beyond: f64 },
-    /// Fraction of the runs ending with the particles on opposite
-    /// sides of the origin.
-    OppositeSides,
-    /// Correlation coefficient of x₁ and x₂ over the runs at the end,
-    /// and in the field.
-    Correlation,
-    FieldCorrelation,
-    /// Mutual information of x₁ and x₂ in the field, in nats: zero
-    /// exactly when |ψ|² is a product.
-    MutualInformation,
-    /// Median change of a coordinate between each run and the same run
-    /// of the twin: the experiment without its potential.
-    MovedVsTwin { axis: usize },
-    /// Largest gap between the field's density of a coordinate and the
-    /// twin's, as a fraction of its peak.
-    MarginalVsTwin { axis: usize },
+    /// Fraction of the arrived particles that started in the front of
+    /// the packet: among the leading share, along y, of all the starts,
+    /// that share being the arrived fraction.
+    ArrivedFromFront,
+    /// Fraction of the particles that ever crossed the axis x = 0.
+    CrossedAxis,
+    /// Mean and standard deviation of the particles' coordinate along
+    /// the axis at the end, and the standard deviation of the field's.
+    Mean { axis: usize },
+    Spread { axis: usize },
+    FieldSpread { axis: usize },
+    /// Median distance the particles moved from where they started.
+    Moved,
+    /// Probability left in the field at the end.
+    Norm,
 }
 
 #[derive(Clone)]
@@ -155,8 +138,7 @@ pub fn slits(y: f64, thickness: f64, centers: &[f64], width: f64) -> Vec<Rect> {
 }
 
 /// A wall filling everything with the coordinate along the axis
-/// between `from` and `to`; along axis 0 on a line, a wall only
-/// particle 1 feels.
+/// between `from` and `to`.
 pub fn band(axis: usize, from: f64, to: f64) -> Rect {
     let mut rect = [[f64::NEG_INFINITY, f64::INFINITY]; 2];
     rect[axis] = [from, to];
@@ -214,16 +196,6 @@ impl Experiment {
         }
         (self.source)(&mut wave);
         wave
-    }
-
-    /// The same experiment without its potential, for measures that
-    /// compare runs with and without it.
-    pub fn twin(&self) -> Experiment {
-        Experiment { potential: free, expectations: Vec::new(), ..self.clone() }
-    }
-
-    pub fn measures(&self, f: impl Fn(&Measure) -> bool) -> bool {
-        self.expectations.iter().any(|x| f(&x.measure))
     }
 
     /// The theory's value at x on the screen, zero without a theory.

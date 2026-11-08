@@ -1,8 +1,6 @@
 //! Running an experiment and measuring its outcome. No I/O: frames
 //! go to a callback.
-use crate::encounter::{self, Crossings};
-use crate::experiment::{Experiment, Measure, TOGETHER};
-use crate::pair;
+use crate::experiment::{Experiment, Measure};
 use crate::particles::Particles;
 use crate::rng::Rng;
 use crate::sample::Sampler;
@@ -10,8 +8,7 @@ use crate::screen::Screen;
 use crate::wave::{Vec2, Wave};
 
 pub const BINS: usize = 128;
-/// Steps between additions to the time-integrated density and
-/// readings of the bunching.
+/// Steps between additions to the time-integrated density.
 const GLOW_EVERY: usize = 10;
 
 pub struct Outcome {
@@ -21,20 +18,14 @@ pub struct Outcome {
     pub screen: Option<Screen>,
     /// Time-integrated density, for drawing trails over.
     pub glow: Vec<f32>,
-    /// Which runs crossed the diagonal, and the most of the runs and
-    /// of the probability ever within TOGETHER, when measured.
-    pub crossings: Crossings,
-    pub together_peak: f64,
-    pub probability_together_peak: f64,
-    /// The same runs of the experiment without its potential.
-    pub twin: Option<Box<Outcome>>,
+    /// Which particles ever crossed the axis x = 0.
+    pub crossed: Vec<bool>,
 }
 
-fn together(p: Vec2) -> bool {
-    encounter::separation(p) < TOGETHER
-}
-
-fn run_alone(
+/// Run to the experiment's duration, calling `frame` with the field,
+/// the particles and the step count at the start and after every
+/// step.
+pub fn run(
     e: &Experiment,
     particles: usize,
     seed: u64,
@@ -47,9 +38,7 @@ fn run_alone(
     let mut particles = Particles::new(start.clone());
     let mut screen = e.screen.map(|y| Screen::new(y, e.extent() / 2.0, BINS, start.len()));
     let mut glow = vec![0.0; wave.n * wave.n];
-    let mut crossings = Crossings::new(&start);
-    let bunching = e.measures(|m| matches!(m, Measure::TogetherPeak | Measure::ProbabilityTogetherPeak));
-    let (mut together_peak, mut probability_together_peak) = (0.0f64, 0.0f64);
+    let mut crossed = vec![false; start.len()];
     let dt = e.dt();
     let steps = (e.duration / dt).ceil() as usize;
     frame(&wave, &particles, 0);
@@ -61,48 +50,17 @@ fn run_alone(
             screen.record(wave.time, &before, &particles.positions);
             screen.integrate(&wave, dt);
         }
-        crossings.record(&particles.positions);
+        for ((c, s), p) in crossed.iter_mut().zip(&start).zip(&particles.positions) {
+            *c |= (p[0] < 0.0) != (s[0] < 0.0);
+        }
         if step % GLOW_EVERY == 0 {
             for (g, k) in glow.iter_mut().zip(0..) {
                 *g += wave.density(k);
             }
-            if bunching {
-                let runs = encounter::fraction_within(&particles.positions, TOGETHER);
-                together_peak = together_peak.max(runs);
-                probability_together_peak = probability_together_peak.max(pair::probability(&wave, together));
-            }
         }
         frame(&wave, &particles, step);
     }
-    Outcome {
-        wave,
-        particles,
-        start,
-        screen,
-        glow,
-        crossings,
-        together_peak,
-        probability_together_peak,
-        twin: None,
-    }
-}
-
-/// Run to the experiment's duration, calling `frame` with the field,
-/// the particles and the step count at the start and after every
-/// step; then the twin on the same starting points, if a measure
-/// needs it.
-pub fn run(
-    e: &Experiment,
-    particles: usize,
-    seed: u64,
-    frame: impl FnMut(&Wave, &Particles, usize),
-) -> Outcome {
-    let mut outcome = run_alone(e, particles, seed, frame);
-    let twin = |m: &Measure| matches!(m, Measure::MovedVsTwin { .. } | Measure::MarginalVsTwin { .. });
-    if e.measures(twin) {
-        outcome.twin = Some(Box::new(run_alone(&e.twin(), particles, seed, |_, _, _| {})));
-    }
-    outcome
+    Outcome { wave, particles, start, screen, glow, crossed }
 }
 
 /// Scale a curve to the total of another.
@@ -116,17 +74,35 @@ fn rms_gap(a: &[f64], b: &[f64]) -> f64 {
     (a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>() / a.len() as f64).sqrt()
 }
 
-/// Largest gap between two curves as a fraction of the first's peak.
-fn largest_gap(a: &[f64], b: &[f64]) -> f64 {
-    let peak = a.iter().cloned().fold(0.0, f64::max);
-    a.iter().zip(b).map(|(p, q)| (p - q).abs()).fold(0.0, f64::max) / peak
+fn fraction(flags: &[bool]) -> f64 {
+    flags.iter().filter(|f| **f).count() as f64 / flags.len() as f64
+}
+
+/// The share of the arrived particles that started among the leading
+/// starts along y, as many of those as there are arrived particles.
+fn arrived_from_front(start: &[Vec2], arrived: &[bool]) -> f64 {
+    let count = arrived.iter().filter(|a| **a).count();
+    let mut order: Vec<usize> = (0..start.len()).collect();
+    order.sort_by(|&a, &b| start[b][1].total_cmp(&start[a][1]));
+    order[..count].iter().filter(|&&k| arrived[k]).count() as f64 / count as f64
+}
+
+/// Standard deviation of the field's density along an axis.
+fn field_spread(wave: &Wave, axis: usize) -> f64 {
+    let n = wave.n;
+    let moment = |power: i32| {
+        let at = |k: usize| wave.density(k) as f64 * wave.position((k % n, k / n))[axis].powi(power);
+        (0..n * n).map(at).sum::<f64>()
+    };
+    let (total, mean) = (moment(0), moment(1) / moment(0));
+    (moment(2) / total - mean * mean).sqrt()
 }
 
 fn on_screen(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
     let screen = o.screen.as_ref().expect("this measure needs a screen");
     let runs = o.particles.positions.len() as f64;
     match measure {
-        Measure::Arrived => screen.hits.iter().sum::<f64>() / runs,
+        Measure::Arrived => fraction(&screen.arrived),
         Measure::Through => screen.flux.iter().sum(),
         Measure::ArrivedAfter { time } => {
             screen.arrivals.iter().filter(|(t, _)| t > time).count() as f64 / runs
@@ -150,30 +126,42 @@ fn on_screen(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
             });
             screen.x(nearest.expect("a current with a maximum"))
         }
+        Measure::ArrivedFromFront => arrived_from_front(&o.start, &screen.arrived),
         _ => unreachable!(),
     }
 }
 
 pub fn measure(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
     let runs = &o.particles.positions;
-    let twin = || o.twin.as_ref().expect("this measure needs the twin");
-    let fraction = |f: fn(&Vec2) -> bool| runs.iter().filter(|p| f(p)).count() as f64 / runs.len() as f64;
+    let n = runs.len() as f64;
+    let mean = |axis: usize| runs.iter().map(|p| p[axis]).sum::<f64>() / n;
     match measure {
-        Measure::Crossed => o.crossings.fraction(),
-        Measure::TogetherPeak => o.together_peak,
-        Measure::ProbabilityTogetherPeak => o.probability_together_peak,
-        Measure::Apart { beyond } => 1.0 - encounter::fraction_within(runs, *beyond),
-        Measure::ProbabilityApart { beyond } => {
-            pair::probability(&o.wave, |p| encounter::separation(p) > *beyond) + 1.0 - o.wave.norm()
+        Measure::CrossedAxis => fraction(&o.crossed),
+        Measure::Mean { axis } => mean(*axis),
+        Measure::Spread { axis } => {
+            let m = mean(*axis);
+            (runs.iter().map(|p| (p[*axis] - m).powi(2)).sum::<f64>() / n).sqrt()
         }
-        Measure::OppositeSides => fraction(|p| p[0] * p[1] < 0.0),
-        Measure::Correlation => encounter::correlation(runs),
-        Measure::FieldCorrelation => pair::correlation(&o.wave),
-        Measure::MutualInformation => pair::mutual_information(&o.wave),
-        Measure::MovedVsTwin { axis } => encounter::moved(runs, &twin().particles.positions, *axis),
-        Measure::MarginalVsTwin { axis } => {
-            largest_gap(&pair::marginals(&o.wave)[*axis], &pair::marginals(&twin().wave)[*axis])
+        Measure::Moved => {
+            let mut d: Vec<f64> =
+                o.start.iter().zip(runs).map(|(s, p)| (p[0] - s[0]).hypot(p[1] - s[1])).collect();
+            d.sort_by(f64::total_cmp);
+            d[d.len() / 2]
         }
+        Measure::FieldSpread { axis } => field_spread(&o.wave, *axis),
+        Measure::Norm => o.wave.norm(),
         _ => on_screen(e, o, measure),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn arrivals_from_the_front_count_the_leading_starts() {
+        let start = [[0.0, 1.0], [0.0, 3.0], [0.0, 2.0], [0.0, 0.0]];
+        assert_eq!(arrived_from_front(&start, &[false, true, true, false]), 1.0);
+        assert_eq!(arrived_from_front(&start, &[true, true, false, false]), 0.5);
     }
 }

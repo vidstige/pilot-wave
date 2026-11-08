@@ -85,18 +85,11 @@ fn write_screen(e: &Experiment, o: &Outcome, out: &str) {
         .expect("write arrivals");
 }
 
-/// Where each particle started and ended, and ended in the twin if
-/// there is one.
+/// Where each particle started and ended.
 fn write_runs(e: &Experiment, o: &Outcome, out: &str) {
-    let twin = o.twin.as_ref().map(|t| &t.particles.positions);
-    let row = |k: usize| {
-        let (s, p) = (o.start[k], o.particles.positions[k]);
-        let pair = twin.map_or(String::new(), |t| format!(",{},{}", t[k][0], t[k][1]));
-        format!("{},{},{},{}{pair}\n", s[0], s[1], p[0], p[1])
-    };
-    let rows: String = (0..o.start.len()).map(row).collect();
-    let head = if twin.is_some() { "x_start,y_start,x,y,x_twin,y_twin" } else { "x_start,y_start,x,y" };
-    fs::write(format!("{out}/{}_runs.csv", e.name), format!("{head}\n{rows}")).expect("write runs");
+    let row = |(s, p): (&Vec2, &Vec2)| format!("{},{},{},{}\n", s[0], s[1], p[0], p[1]);
+    let rows: String = o.start.iter().zip(&o.particles.positions).map(row).collect();
+    fs::write(format!("{out}/{}_runs.csv", e.name), format!("x_start,y_start,x,y\n{rows}")).expect("write runs");
 }
 
 /// Print every expectation against its measurement.

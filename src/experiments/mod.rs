@@ -1,10 +1,7 @@
 //! The experiments, one concept per file, found by name.
 use crate::experiment::Experiment;
 
-pub mod collision;
 pub mod double_slit;
-pub mod entangled;
-pub mod molecule;
 pub mod single_slit;
 pub mod spin;
 
@@ -12,15 +9,6 @@ pub fn all() -> Vec<Experiment> {
     vec![
         single_slit::single_slit(),
         double_slit::double_slit(),
-        collision::distinguishable(),
-        collision::bosons(),
-        collision::fermions(),
-        collision::scattered(),
-        molecule::molecule(),
-        molecule::molecule_break(),
-        entangled::entangled(),
-        entangled::entangled_wall(),
-        entangled::unentangled_wall(),
         spin::spin_in_plane(),
         spin::spin_normal(),
     ]

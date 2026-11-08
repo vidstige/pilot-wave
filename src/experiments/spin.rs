@@ -4,7 +4,6 @@
 use std::f64::consts::PI;
 
 use crate::experiment::{band, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS};
-use crate::pair;
 use crate::wave::{Vec2, Wave};
 
 /// The plane is |x|, |y| ≤ 51.2; the channel runs up it, with the
@@ -41,7 +40,7 @@ fn confinement(p: Vec2) -> f64 {
 /// The ground state of the box at the closed end of the channel,
 /// Gaussian across it; the box's far wall is removed at t = 0.
 fn boxed(wave: &mut Wave) {
-    pair::fill(wave, |x, y| {
+    wave.fill(|[x, y]| {
         let along = if (END..END + BOX).contains(&y) { (PI * (y - END) / BOX).sin() } else { 0.0 };
         [along * (-0.5 * OMEGA * x * x).exp(), 0.0]
     })

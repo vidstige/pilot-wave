@@ -12,7 +12,7 @@ pub struct Screen {
     /// Each particle's first crossing as (time, x), in the order they
     /// happened.
     pub arrivals: Vec<(f64, f64)>,
-    arrived: Vec<bool>,
+    pub arrived: Vec<bool>,
 }
 
 impl Screen {
