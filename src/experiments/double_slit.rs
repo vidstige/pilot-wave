@@ -86,6 +86,12 @@ are 0.18 mrad apart against our 0.25 rad",
                 expected: 0.0,
                 tolerance: 0.1,
             },
+            Expectation {
+                what: "fraction of the particles that ever crossed the axis of symmetry",
+                measure: Measure::CrossedAxis,
+                expected: 0.0,
+                tolerance: 0.0001,
+            },
         ],
     }
 }
