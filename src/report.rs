@@ -12,6 +12,9 @@ use crate::{plot, png, view};
 pub const PIXELS: usize = 800;
 pub const FRAME_EVERY: f64 = 0.5;
 const TRAILS: usize = 300;
+/// Trails written as a table, and the steps between their rows.
+const TRAIL_ROWS: usize = 40;
+const TRAIL_EVERY: usize = 20;
 /// Particles drawn in a frame, so the field stays visible under them.
 const DOTS: usize = 2000;
 const PLOT: (usize, usize) = (800, 300);
@@ -56,6 +59,17 @@ fn write_trails(e: &Experiment, o: &Outcome, trails: &[Vec<Vec2>], out: &str) {
     }
     view::particles(&mut image, &o.wave, trails);
     png::write(format!("{out}/{}_trails.png", e.name), &image).expect("write trails");
+}
+
+/// The first trails as rows of trail, time and position.
+fn write_trail_table(e: &Experiment, trails: &[Vec<Vec2>], out: &str) {
+    let dt = e.dt();
+    let row = |(k, trail): (usize, &Vec<Vec2>)| -> String {
+        let points = trail.iter().enumerate().step_by(TRAIL_EVERY);
+        points.map(|(s, p)| format!("{k},{},{},{}\n", s as f64 * dt, p[0], p[1])).collect()
+    };
+    let rows: String = trails.iter().take(TRAIL_ROWS).enumerate().map(row).collect();
+    fs::write(format!("{out}/{}_trails.csv", e.name), format!("trail,t,x,y\n{rows}")).expect("write trails");
 }
 
 fn write_screen(e: &Experiment, o: &Outcome, out: &str) {
@@ -110,6 +124,7 @@ pub fn verdicts(e: &Experiment, o: &Outcome) -> bool {
 
 pub fn write(e: &Experiment, o: &Outcome, trails: &[Vec<Vec2>], out: &str) {
     write_trails(e, o, &trails[..trails.len().min(TRAILS)], out);
+    write_trail_table(e, trails, out);
     write_screen(e, o, out);
     if e.space == Space::Line {
         write_runs(e, o, out);

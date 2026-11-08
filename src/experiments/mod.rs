@@ -6,6 +6,7 @@ pub mod double_slit;
 pub mod entangled;
 pub mod molecule;
 pub mod single_slit;
+pub mod spin;
 
 pub fn all() -> Vec<Experiment> {
     vec![
@@ -19,6 +20,8 @@ pub fn all() -> Vec<Experiment> {
         entangled::entangled(),
         entangled::entangled_wall(),
         entangled::unentangled_wall(),
+        spin::spin_in_plane(),
+        spin::spin_normal(),
     ]
 }
 
