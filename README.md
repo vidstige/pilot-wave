@@ -82,7 +82,9 @@ with an expected value and a tolerance. The runner (`run.rs`) builds
 the field, samples the particles, steps both, and measures; where a
 measure compares against the twin, the experiment without its
 potential, it runs the same starting points through that too.
-`report.rs` prints and writes.
+`report.rs` prints and writes. `ENGINE.md` describes the engine in
+detail: the scheme, the decisions behind it, and which knobs an
+experiment turns against which are fixed in the code.
 
 ## Experiments
 
