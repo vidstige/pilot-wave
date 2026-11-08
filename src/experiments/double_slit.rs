@@ -1,6 +1,7 @@
 //! Electrons through two slits: cos² fringes under the sinc² envelope.
 use crate::experiment::{
-    Expectation, Experiment, Measure, Realisation, Theory, Wall, ELECTRON_MASS, SPEED,
+    Expectation, Experiment, Measure, Realisation, Source, Space, Theory, Wall, ELECTRON_MASS,
+    SPEED,
 };
 use crate::packet::Packet;
 
@@ -29,11 +30,12 @@ the fringes can be watched building up one particle at a time.",
         realisation: Realisation {
             particle: "electron",
             mass: ELECTRON_MASS,
-            wavelength: 50e-12,
+            length: 50e-12,
             reference: "Bach et al. 2013, 600 eV electrons through slits 62 nm wide and 272 nm \
 apart: d/a = 4.4 against our 4, so about as many fringes fit under the envelope, but theirs \
 are 0.18 mrad apart against our 0.25 rad",
         },
+        space: Space::Plane,
         cells: 1024,
         dx: 0.1,
         walls: vec![Wall::Slits {
@@ -42,11 +44,13 @@ are 0.18 mrad apart against our 0.25 rad",
             centers: vec![-SEPARATION / 2.0, SEPARATION / 2.0],
             width: WIDTH,
         }],
-        source: Packet { center: [0.0, START], width: [6.0, 2.0], wavevector: [0.0, SPEED] },
+        potentials: vec![],
+        source: Source::Packet(Packet { center: [0.0, START], width: [6.0, 2.0], wavevector: [0.0, SPEED] }),
+        spin: [0.0; 3],
         particles: 60000,
         duration: (SCREEN - START + TAIL) / SPEED,
         screen: Some(SCREEN),
-        theory: Theory::Fraunhofer,
+        theory: Some(Theory::Fraunhofer),
         expectations: vec![
             Expectation {
                 what: "fraction of particles through the screen, the beam's share across both slits",

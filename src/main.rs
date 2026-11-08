@@ -51,15 +51,18 @@ fn run_and_report(e: &pilot_wave::experiment::Experiment, particles: usize, out:
     report::describe(e);
     let per_frame = (FRAME_EVERY / e.dt()) as usize;
     let mut trails: Vec<Vec<Vec2>> = Vec::new();
+    let mut peak = 0.0;
     let outcome = run::run(e, particles, 1, |wave, particles, step| {
-        if trails.is_empty() {
+        if step == 0 {
+            peak = wave.peak();
             trails = particles.positions.iter().take(300).map(|p| vec![*p]).collect();
-        }
-        for (trail, p) in trails.iter_mut().zip(&particles.positions) {
-            trail.push(*p);
+        } else {
+            for (trail, p) in trails.iter_mut().zip(&particles.positions) {
+                trail.push(*p);
+            }
         }
         if step % per_frame == 0 {
-            report::frame(e, wave, particles, &format!("{out}/{}_{:04}.png", e.name, step / per_frame));
+            report::frame(e, wave, particles, peak, &format!("{out}/{}_{:04}.png", e.name, step / per_frame));
         }
     });
     report::write(e, &outcome, &trails, out);

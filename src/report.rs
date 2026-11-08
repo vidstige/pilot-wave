@@ -1,8 +1,9 @@
 //! What a run prints and writes: the description, the units, the
-//! expectations, then frames, trails, the screen and the verdicts.
+//! expectations, then frames, trails, the screen, the runs and the
+//! verdicts.
 use std::fs;
 
-use crate::experiment::{Experiment, Expectation, ELECTRON_VOLT, ENERGY, SPEED};
+use crate::experiment::{Experiment, Expectation, Source, Space, ELECTRON_VOLT, ENERGY, SPEED};
 use crate::particles::Particles;
 use crate::run::{measure, Outcome, BINS};
 use crate::wave::{Vec2, Wave};
@@ -18,11 +19,14 @@ const PLOT: (usize, usize) = (800, 300);
 pub fn describe(e: &Experiment) {
     let r = &e.realisation;
     println!("{}\n\n{}\n", e.name, e.summary);
-    println!("Realisation: {} with de Broglie wavelength {:.3e} m ({}).", r.particle, r.wavelength, r.reference);
+    println!("Realisation: {} ({}).", r.particle, r.reference);
     println!("One unit of length is {:.3e} m, of time {:.3e} s, of speed {:.3e} m/s, of energy {:.3e} J.",
-        r.length(), r.time(), r.speed(), r.energy());
-    println!("The packet moves at {:.3e} m/s with kinetic energy {:.1} eV; the domain is {:.3e} m across; the run lasts {:.3e} s.\n",
-        SPEED * r.speed(), ENERGY * r.energy() / ELECTRON_VOLT, e.extent() * r.length(), e.duration * r.time());
+        r.length, r.time(), r.speed(), r.energy());
+    if let Source::Packet(_) = e.source {
+        println!("The packet moves at {:.3e} m/s with kinetic energy {:.1} eV.",
+            SPEED * r.speed(), ENERGY * r.energy() / ELECTRON_VOLT);
+    }
+    println!("The domain is {:.3e} m across; the run lasts {:.3e} s.\n", e.extent() * r.length, e.duration * r.time());
     println!("Grid {} x {} cells of {}, dt {:.2e}, {} particles, duration {:.2}.", e.cells, e.cells, e.dx, e.dt(), e.particles, e.duration);
     println!("\nExpectations:");
     for x in &e.expectations {
@@ -31,9 +35,12 @@ pub fn describe(e: &Experiment) {
     println!();
 }
 
-pub fn frame(e: &Experiment, wave: &Wave, particles: &Particles, path: &str) {
-    let peak = e.source.peak();
+/// The field with the particles on it, densities relative to `peak`.
+pub fn frame(e: &Experiment, wave: &Wave, particles: &Particles, peak: f32, path: &str) {
     let mut image = view::field(wave, PIXELS, view::Style::Phase, peak);
+    if e.space == Space::Line {
+        view::diagonal(&mut image);
+    }
     let heads: Vec<Vec<Vec2>> = particles.positions.iter().take(DOTS).map(|p| vec![*p]).collect();
     view::particles(&mut image, wave, &heads);
     png::write(path, &image).expect("write frame");
@@ -44,6 +51,9 @@ fn write_trails(e: &Experiment, o: &Outcome, trails: &[Vec<Vec2>], out: &str) {
     glow.re = o.glow.iter().map(|g| g.sqrt()).collect();
     glow.keep = o.wave.keep.clone();
     let mut image = view::field(&glow, PIXELS, view::Style::Density, glow.peak());
+    if e.space == Space::Line {
+        view::diagonal(&mut image);
+    }
     view::particles(&mut image, &o.wave, trails);
     png::write(format!("{out}/{}_trails.png", e.name), &image).expect("write trails");
 }
@@ -71,6 +81,20 @@ fn write_screen(e: &Experiment, o: &Outcome, out: &str) {
         .expect("write arrivals");
 }
 
+/// Where each run started and ended, and ended in the twin if there
+/// is one.
+fn write_runs(e: &Experiment, o: &Outcome, out: &str) {
+    let twin = o.twin.as_ref().map(|t| &t.particles.positions);
+    let row = |k: usize| {
+        let (s, p) = (o.start[k], o.particles.positions[k]);
+        let pair = twin.map_or(String::new(), |t| format!(",{},{}", t[k][0], t[k][1]));
+        format!("{},{},{},{}{pair}\n", s[0], s[1], p[0], p[1])
+    };
+    let rows: String = (0..o.start.len()).map(row).collect();
+    let head = if twin.is_some() { "x1_start,x2_start,x1,x2,x1_twin,x2_twin" } else { "x1_start,x2_start,x1,x2" };
+    fs::write(format!("{out}/{}_runs.csv", e.name), format!("{head}\n{rows}")).expect("write runs");
+}
+
 /// Print every expectation against its measurement.
 pub fn verdicts(e: &Experiment, o: &Outcome) -> bool {
     println!("Results:");
@@ -87,4 +111,7 @@ pub fn verdicts(e: &Experiment, o: &Outcome) -> bool {
 pub fn write(e: &Experiment, o: &Outcome, trails: &[Vec<Vec2>], out: &str) {
     write_trails(e, o, &trails[..trails.len().min(TRAILS)], out);
     write_screen(e, o, out);
+    if e.space == Space::Line {
+        write_runs(e, o, out);
+    }
 }

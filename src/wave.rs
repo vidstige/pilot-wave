@@ -39,6 +39,10 @@ pub struct Wave {
     pub keep: Vec<f32>,
     /// Steps taken so far times dt.
     pub time: f64,
+    /// The spin's component normal to the plane, which adds Holland's
+    /// term ∇×(ρ ŝ)/2 to the current: divergence-free, so the density
+    /// evolves as without it, but the trajectories differ.
+    pub spin: f64,
 }
 
 /// Largest stable step for the given cell size and potential.
@@ -174,6 +178,7 @@ impl Wave {
             potential: vec![0.0; n * n],
             keep: vec![1.0; n * n],
             time: 0.0,
+            spin: 0.0,
         }
     }
 
@@ -229,7 +234,8 @@ impl Wave {
 
     /// Probability current Im(ψ* ∇ψ) and density |ψ|² at a cell, the
     /// gradient from a fourth order difference so a plane wave at ten
-    /// cells per wavelength comes out within 0.3%.
+    /// cells per wavelength comes out within 0.3%. With spin s normal
+    /// to the plane the current also carries s (∂ᵧρ, −∂ₓρ)/2.
     fn current(&self, k: usize) -> (Vec2, f64) {
         let n = self.n;
         let grad = |f: &[f32], s: usize| {
@@ -237,7 +243,9 @@ impl Wave {
         };
         let (r, i) = (self.re[k] as f64, self.im[k] as f64);
         let along = |s| r * grad(&self.im, s) - i * grad(&self.re, s);
-        ([along(1), along(n)], r * r + i * i)
+        let half_density_gradient = |s| r * grad(&self.re, s) + i * grad(&self.im, s);
+        let spin = [self.spin * half_density_gradient(n), -self.spin * half_density_gradient(1)];
+        ([along(1) + spin[0], along(n) + spin[1]], r * r + i * i)
     }
 
     /// Guiding velocity, the current over the density, each

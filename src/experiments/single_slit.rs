@@ -1,6 +1,7 @@
 //! Electrons through one slit: the sinc² diffraction pattern.
 use crate::experiment::{
-    Expectation, Experiment, Measure, Realisation, Theory, Wall, ELECTRON_MASS, SPEED,
+    Expectation, Experiment, Measure, Realisation, Source, Space, Theory, Wall, ELECTRON_MASS,
+    SPEED,
 };
 use crate::packet::Packet;
 
@@ -28,18 +29,21 @@ be watched building up one particle at a time.",
         realisation: Realisation {
             particle: "electron",
             mass: ELECTRON_MASS,
-            wavelength: 50e-12,
+            length: 50e-12,
             reference: "Bach et al. 2013, 600 eV electrons; their slit was 62 nm, \
 over a thousand wavelengths, so their pattern sits at angles a thousand times smaller",
         },
+        space: Space::Plane,
         cells: 1024,
         dx: 0.1,
         walls: vec![Wall::Slits { y: 0.0, thickness: 0.4, centers: vec![0.0], width: WIDTH }],
-        source: Packet { center: [0.0, START], width: [6.0, 2.0], wavevector: [0.0, SPEED] },
+        potentials: vec![],
+        source: Source::Packet(Packet { center: [0.0, START], width: [6.0, 2.0], wavevector: [0.0, SPEED] }),
+        spin: [0.0; 3],
         particles: 40000,
         duration: (SCREEN - START + TAIL) / SPEED,
         screen: Some(SCREEN),
-        theory: Theory::Fraunhofer,
+        theory: Some(Theory::Fraunhofer),
         expectations: vec![
             Expectation {
                 what: "fraction of particles through the screen, the beam's share across the slit, erf(1/6√2)",
