@@ -3,6 +3,7 @@ screen plots. Run the experiments into out/<name> first (see README)."""
 from __future__ import annotations
 
 import os
+import re
 import sys
 from typing import Tuple
 
@@ -34,6 +35,14 @@ SMALL = 25.6
 # Distance from the slits to the screen, for the single slit's zeros.
 SCREEN = 29.8
 SINGLE_SLIT_WIDTH = 2.0
+# The entangled pair's line, the widths of its centre and separation,
+# particle 2's wall, and the line view's colours of the two particles.
+LONG = 51.2
+EPR_CENTRE = 1.0
+EPR_GAP = 0.6
+EPR_WALL = 5.0
+ONE = "#ff8c32"
+TWO = "#46aaff"
 
 plt.rcParams.update({
     "figure.facecolor": SURFACE,
@@ -190,12 +199,12 @@ def barrier() -> plt.Figure:
     return figure
 
 
-def pair_frame(ax, path: str, reach: tuple[float, float], title: str):
+def pair_frame(ax, path: str, reach: tuple[float, float], title: str, extent: float = SMALL):
     """Configuration space over the line view, both cut to x in reach."""
     image = plt.imread(path)
     n = image.shape[1]
     field, line = image[:n], image[n:]
-    px = lambda v: int(round((v + SMALL / 2) / SMALL * n))
+    px = lambda v: int(round((v + extent / 2) / extent * n))
     a, b = map(px, reach)
     ax.imshow(np.vstack([field[n - b:n - a, a:b], line[:, a:b]]))
     ax.set_title(title, fontsize=10)
@@ -249,6 +258,87 @@ def molecule() -> plt.Figure:
     return figure
 
 
+def table(path: str) -> dict[str, np.ndarray]:
+    data = np.genfromtxt(path, delimiter=",", names=True)
+    return {key: data[key] for key in data.dtype.names}
+
+
+def correlations(path: str) -> np.ndarray:
+    """Rows of time and the correlation over the runs in a summary."""
+    pattern = re.compile(r"t = +([\d.]+), correlation (-?[\d.]+) over the runs")
+    return np.array([[float(g) for g in m.groups()] for m in map(pattern.search, open(path)) if m])
+
+
+def closed_form(t: np.ndarray) -> np.ndarray:
+    """Correlation of x₁ and x₂ for the free Gaussian pair."""
+    centre = EPR_CENTRE ** 2 + t ** 2 / (16 * EPR_CENTRE ** 2)
+    half_gap = (EPR_GAP ** 2 + t ** 2 / EPR_GAP ** 2) / 4
+    return (centre - half_gap) / (centre + half_gap)
+
+
+def tidy(ax, xlabel: str, ylabel: str):
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.legend(frameon=False, fontsize=8)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+
+
+def paths(ax, run: str, follow: int):
+    """x₁ and x₂ of a few runs over time, with the wall and without."""
+    data = table(f"{OUT}/{run}/{run}_paired.csv")
+    for k in range(follow):
+        row = data["run"] == k
+        t = data["t"][row]
+        for axis, sub, color in [("1", "₁", ONE), ("2", "₂", TWO)]:
+            free = dict(label=f"x{sub} without the wall") if k == 0 else {}
+            wall = dict(label=f"x{sub} with the wall") if k == 0 else {}
+            ax.plot(t, data[f"x{axis}_free"][row], color=color, lw=1, ls="--", alpha=0.6, **free)
+            ax.plot(t, data[f"x{axis}_wall"][row], color=color, lw=1.4, **wall)
+    ax.axhline(EPR_WALL, color=MUTED, lw=0.8, ls="--")
+    ax.set_title(f"{follow} runs, particle 2's wall at x = {EPR_WALL:g}", fontsize=10)
+    tidy(ax, "t", "position")
+
+
+def marginals(ax, run: str):
+    """The densities of x₁ and x₂ at the end, with the wall and without."""
+    field = table(f"{OUT}/{run}/{run}_marginals.csv")
+    runs = table(f"{OUT}/{run}/{run}_histograms.csv")
+    for axis, color in [("one", ONE), ("two", TWO)]:
+        n = axis.replace("one", "x₁").replace("two", "x₂")
+        ax.plot(field["x"], field[f"{axis}_free"], color=color, lw=2.5, alpha=0.4,
+                label=f"{n} without the wall")
+        ax.plot(field["x"], field[f"{axis}_wall"], color=color, lw=1, label=f"{n} with it")
+        ax.step(runs["x"], runs[f"{axis}_wall"], where="mid", color=color, lw=0.6, alpha=0.7)
+    ax.set_xlim(-22, 22)
+    ax.set_title("densities at t = 3.5, runs as steps", fontsize=10)
+    tidy(ax, "x", "density")
+
+
+def entangled() -> plt.Figure:
+    figure = plt.figure(figsize=(12, 8.6), layout="constrained")
+    top, bottom = figure.subfigures(2, 1, height_ratios=[1.25, 1])
+    low, high = -18, 8
+    for ax, i in zip(top.subplots(1, 4), [0, 3, 5, 7]):
+        path = f"{OUT}/entangled-wall-few/entangled-wall_{i:04}.png"
+        pair_frame(ax, path, (low, high), f"with the wall, t = {i / 2:g}", LONG)
+        # Particle 2's wall: x₂ = EPR_WALL across configuration space.
+        height = ax.get_images()[0].get_array().shape[1]
+        ax.axhline((high - EPR_WALL) / (high - low) * height, color=TWO, lw=0.8, ls="--")
+    left, middle, right = bottom.subplots(1, 3)
+    paths(left, "entangled-wall", 8)
+    marginals(middle, "entangled-wall")
+    t = np.linspace(0, 3.5, 100)
+    right.plot(t, closed_form(t), color=INK, lw=1, label="closed form")
+    for run, color in [("entangled", THEORY), ("unentangled", FLUX)]:
+        t, rho = correlations(f"{OUT}/{run}/summary.txt").T
+        right.plot(t, rho, "o", color=color, label=f"{run}, 20000 runs")
+    right.axhline(0, color=MUTED, lw=0.5)
+    right.set_title("correlation of x₁ and x₂, no wall", fontsize=10)
+    tidy(right, "t", "correlation")
+    return figure
+
+
 FIGURES = {
     "double-slit": lambda: comparison("double-slit", "Fraunhofer", (-36, 36, -25, 45), 40),
     "disc": lambda: comparison("disc", "Fresnel (Kirchhoff)", (-30, 30, -25, 40), 25),
@@ -261,6 +351,7 @@ FIGURES = {
     "free": lambda: frames("free", "free", [1, 4, 8, 12], LARGE, (-12, 12, -24, 24)),
     "fermions": fermions,
     "molecule": molecule,
+    "entangled": entangled,
 }
 
 def save(figure: plt.Figure, path: str):
