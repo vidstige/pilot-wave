@@ -139,6 +139,18 @@ def ground() -> plt.Figure:
     return figure
 
 
+def vortex() -> plt.Figure:
+    """The trap's m = +1, m = -1 and p orbital states, each with 40
+    trails over two periods."""
+    figure, axes = plt.subplots(1, 3, figsize=(9, 3.3))
+    box = (-4, 4, -4, 4)
+    titles = ["m = +1: counterclockwise", "m = -1: clockwise", "p orbital: at rest"]
+    for ax, name, title in zip(axes, ["vortex", "antivortex", "orbital"], titles):
+        show(ax, f"{OUT}/{name}-few/{name}_trajectories.png", SMALL, box, title)
+    figure.tight_layout()
+    return figure
+
+
 def numbers(path: str) -> list[float]:
     """Every decimal number in a run's stdout summary, in order."""
     return [float(w.strip("(),")) for w in open(path).read().split()
@@ -181,6 +193,7 @@ FIGURES = {
     "barrier": barrier,
     "harmonic": harmonic,
     "ground": ground,
+    "vortex": vortex,
     "box": lambda: frames("box", "box", [1, 3, 5, 8], SMALL, (-6.5, 6.5, -6.5, 6.5)),
     "free": lambda: frames("free", "free", [1, 4, 8, 12], LARGE, (-12, 12, -24, 24)),
 }

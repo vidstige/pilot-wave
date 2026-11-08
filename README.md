@@ -198,8 +198,27 @@ the start and after two periods and sixty particles that never move.
 ![Ground state: nothing moves](images/ground.png)
 
 Over two periods (t = 25, 14000 steps) no particle of 2000 moves more
-than 3.3·10⁻⁶, and the density changes by at most 1.1·10⁻⁶ of its
+than 4.7·10⁻⁶, and the density changes by at most 2.5·10⁻⁶ of its
 peak.
+
+### Vortex states: an orbital spin
+
+The trap's first excited level holds the states ψ ∝ (x ± iy) e^{−ωr²/2},
+with angular momentum m = ±1. Their density is a stationary ring, but
+their phase winds once around the centre, so every particle circles
+it at speed 1/r, counterclockwise for m = +1 and clockwise for m = −1:
+a stationary state whose particles never stop moving, and a classical
+picture of what the quantum number m means. The sum of the two is the
+real p orbital x e^{−ωr²/2}, whose particles stand still. The runner
+reports the mean r × v of the particles, the orbital angular momentum
+each one carries about the centre.
+
+![Vortex states and the p orbital](images/vortex.png)
+
+Over two periods the `vortex` and `antivortex` runs give angular
+momentum +1.0004 and −1.0004 per particle, the density changing by at
+most 4.3·10⁻⁶ of its peak while every particle goes around; the
+`orbital` run gives 0.0000 and no particle moves more than 2·10⁻⁶.
 
 ### Box and free packet
 
