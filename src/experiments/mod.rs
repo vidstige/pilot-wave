@@ -3,6 +3,7 @@ use crate::experiment::Experiment;
 
 pub mod collision;
 pub mod double_slit;
+pub mod entangled;
 pub mod molecule;
 pub mod single_slit;
 
@@ -15,6 +16,9 @@ pub fn all() -> Vec<Experiment> {
         collision::fermions(),
         molecule::molecule(),
         molecule::molecule_break(),
+        entangled::entangled(),
+        entangled::entangled_wall(),
+        entangled::unentangled_wall(),
     ]
 }
 
