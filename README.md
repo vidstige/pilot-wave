@@ -8,7 +8,7 @@ positions ride its phase gradient. Positions drawn from |ψ|² at the
 start stay distributed as |ψ|², so an ensemble of deterministic
 trajectories reproduces the quantum statistics. In classical mode the
 same particles obey Newton in the same potential instead, for
-comparison. The only dependency is eframe, for the live viewer.
+comparison. It has no dependencies.
 
 ![Double slit: quantum and classical trails, and the screen](images/double-slit.png)
 
@@ -262,22 +262,6 @@ is the velocity. What remains is the grid's dispersion: at k·dx = 0.63
 the Laplacian's curvature is 0.976 instead of 1, an effective mass
 2.5% heavier along the motion, which the free packet and the barrier
 both show. Halving the cells would quarter that.
-
-## Live viewer
-
-```
-cargo run --release --bin live
-```
-
-The side panel picks the experiment, the particle count, quantum or
-classical particles, the grid size (256, 512 or 1024), the replay
-speed in time units per second, and the view: phase (hue) with
-density (brightness), density alone, or the density as a lit surface.
-Under the field, experiments with a screen plot the arrivals, the
-integrated current and the theory as they build up. `live --screenshot
-images/live.png` runs for two seconds, saves the window and quits.
-
-![The live viewer](images/live.png)
 
 ## Two particles in one dimension
 
