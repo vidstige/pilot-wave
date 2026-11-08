@@ -398,3 +398,153 @@ than 3 apart; in the field 0.649 of the probability is apart and the
 sponge has taken 0.199, all of it fragments flying off, 0.848 in all.
 The remaining 0.15 stays bound even though the kick carried more than
 twice the binding energy.
+
+## Entanglement
+
+Two particles are entangled when their wavefunction ψ(x₁, x₂) is not a
+product a(x₁)b(x₂). In Bohmian mechanics that has a direct meaning:
+the velocity of particle 1 is ∂₁ arg ψ evaluated at the pair's
+configuration (x₁, x₂), so for a product it depends on x₁ alone, and
+for an entangled ψ it depends on where particle 2 is, however far
+away. These experiments let a pair fly apart, measure how correlated
+the two positions stay, and then put a wall in particle 2's way to
+see what that does to particle 1.
+
+```
+mkdir -p out/entangled out/unentangled out/entangled-wall out/unentangled-wall out/entangled-wall-few
+cargo run --release -- entangled 20000 out/entangled | tee out/entangled/summary.txt
+cargo run --release -- unentangled 20000 out/unentangled | tee out/unentangled/summary.txt
+cargo run --release -- entangled-wall 20000 out/entangled-wall | tee out/entangled-wall/summary.txt
+cargo run --release -- unentangled-wall 20000 out/unentangled-wall | tee out/unentangled-wall/summary.txt
+cargo run --release -- entangled-wall 2000 out/entangled-wall-few
+.venv/bin/python tools/figures.py entangled
+```
+
+The pair starts together and flies apart, particle 1 to the left:
+with the centre c = (x₁ + x₂)/2 and the separation r = x₁ − x₂,
+
+ψ ∝ exp(−c²/4σ_c² − r²/4σ_r²) e^{−ikr},  σ_c = 1, σ_r = 0.6, k = 3,
+
+so |ψ|² is a Gaussian 3.3 times longer along the diagonal than across
+it, and each particle moves at 3 away from the other. The positions
+are correlated (the particles are close to each other wherever the
+pair is) and the momenta anticorrelated (the total momentum p₁ + p₂
+spreads 1/(2σ_c) = 0.5, the relative momentum (p₁ − p₂)/2 spreads
+1/(2σ_r) = 0.83). The control, `unentangled`, is
+the product of the same state's two marginal packets, each 1.04 wide
+with its own wavenumber ∓3: the same x₁ and x₂ distributions at the
+start, no correlation. They run on a line twice as long as the other
+two-particle experiments, |x| ≤ 25.6, on a 1024² grid of cells 0.05
+(why under the wall, below), until t = 3.5, when the particles are
+21 apart on average, each spread 3.2 wide; a wall run of 20000, which
+also runs its twin, takes about a minute and a half. Each
+run reports, once a time unit, the correlation coefficient of x₁ and
+x₂ over the runs and in the field, and the mutual information of
+their joint distribution binned in squares 0.4 wide: the
+Kullback-Leibler divergence of the joint from the product of its
+marginals, zero exactly when the joint is a product.
+
+![Entangled pair: configuration space as particle 2 meets its wall, paired runs, densities and correlation](images/entangled.png)
+
+### The entanglement survives separation
+
+For free flight the two coordinates' correlation has a closed form,
+(Var c − Var r/4)/(Var c + Var r/4) with Var c = σ_c² + t²/16σ_c² and
+Var r = σ_r² + t²/σ_r², and both field and runs follow it (bottom
+right in the figure):
+
+| t   | runs    | field   | closed form | mutual information, field |
+|-----|---------|---------|-------------|---------------------------|
+| 0   | 0.835   | 0.835   | 0.835       | 0.570 nats                |
+| 1   | 0.152   | 0.151   | 0.151       | 0.011                     |
+| 2   | −0.392  | −0.393  | −0.393      | 0.083                     |
+| 3   | −0.604  | −0.605  | −0.605      | 0.226                     |
+| 3.5 | −0.659  | −0.659  | −0.659      | 0.284                     |
+
+The correlation changes sign. At the start it is the position
+correlation, the particles close together; as they fly apart the
+spread of their separation, driven by the relative momentum, outgrows
+that of their centre, and the momentum anticorrelation takes over:
+a particle 1 that went far left is matched by a particle 2 that went
+far right. In between, at t = 2σ_cσ_r = 1.2, the correlation passes
+through zero, and since the density stays Gaussian, |ψ|² is at that
+moment exactly a product: the entanglement is then wholly in the
+phase of ψ, in velocities that depend on the other particle's
+position. Once the pair is far apart it is in the density again: at
+t = 3.5, 21 apart, the joint density is plainly not a product, with
+a correlation of −0.659 and mutual information 0.284 nats in the field
+(−½ ln(1 − ρ²) = 0.285 for a Gaussian). The unentangled control
+stays a product throughout: correlation 0.0000 and mutual information
+0.0000 in the field, and over 20000 runs 0.005 and 0.026 nats, which is
+what sampling alone gives (the binned mutual information of 20000
+runs is biased upwards by about the number of occupied bins over
+twice the number of runs; the entangled runs give 0.333).
+
+### Nonlocal guidance, no signalling
+
+`entangled-wall` adds a wall that only particle 2 feels, at x₂ = 5,
+a steep ramp V = 20 (x₂ − 5) for x₂ > 5; in configuration space it
+fills everything above a horizontal line (dashed in the frames).
+Particle 2 meets it at about t = 1.7, when particle 1 is about 10 away
+on the other side with nothing in its way. The runner then runs the
+same 20000 starting points again, stepping the experiment with the
+wall and its twin without it side by side, and compares them run by
+run. `unentangled-wall` does the same for the control.
+
+Each run's x₁ changes. With the wall and without, the same run's
+particle 1 is in different places once particle 2 has bounced:
+
+| t   | largest change of x₁ | median |
+|-----|----------------------|--------|
+| 1   | 0.35                 | 0.0002 |
+| 2   | 2.00                 | 0.11   |
+| 3   | 4.05                 | 0.53   |
+| 3.5 | 5.19                 | 0.75   |
+
+The bottom left of the figure shows eight such runs: where particle 2
+(blue) bounces, particle 1 (orange) leaves its path without the wall
+(dashed). Particle 2 lingers at the wall: as in one dimension, the
+particles at the front of the incoming packet turn first and become
+the back of the outgoing one, so fast runs come back slow, and since
+the momenta are anticorrelated their particle 1 slows down too. For
+the unentangled pair the same comparison gives a largest change of
+0.017 and a median of 0.004, three hundred times less; it would be
+zero but for the time stepping, which keeps a product only nearly a
+product (on a small test grid, particle 1's velocity at a fixed x₁
+varies by up to 0.09 across particle 2's tail after t = 0.2, against
+0.001 at the start).
+
+Yet nothing about particle 1 that could be observed changes: no
+signalling. At t = 3.5 the density of x₁ with and without the wall
+differs by at most 1.3·10⁻⁴ of its peak, while that of x₂ differs by
+0.94 of its peak. The runs agree as well: in bins of 0.4, the largest
+difference between the two histograms of x₁ is 0.0036 of the runs,
+against a statistical error of 0.0020 in that bin, and χ² between
+them is 46.6 over 62 bins; for x₂ the largest difference is 0.055, χ²
+36570 over 82 bins. For the control the x₁ densities differ by
+3.5·10⁻⁵ of the peak, and the histograms by 0.0018 against an error
+of 0.0028, χ² 2.6 over 38 bins (the runs barely move, so the two
+histograms are nearly the same sample). In each run the runs follow
+the field: χ² of the runs' x₁ against the field's density is 65.5
+over 52 bins with the wall and 47.1 without, for x₂ 34.4 over 34 and
+25.6 over 52. The wall rearranges which particle 1 ends where; it
+cannot change how many end anywhere, so no observer of particle 1
+alone can tell whether particle 2 met a wall. The x₁ density the
+runner reports is R² + I², with the imaginary part half a step
+ahead; the scheme's conserved R² + I₋I₊ gives the same x₁ density with
+and without the wall to 5·10⁻⁵ of its peak, float precision, in the
+test of the same setup on a small grid.
+
+The wall and the grid were chosen with care. A wall of cells held at
+zero, as elsewhere, let a few runs step into it: the interpolated
+velocity stays finite up to such cells and is zero inside them, so
+those runs froze, particle 1 included; in a trial run one ended 16
+from its twin. A step 100 high made ψ fall off within a cell, and the
+runs off it bunched. The ramp turns particle 2 back within half a
+unit. And where particle 2 turns, the wave coming back interferes
+with the wave still coming in, in fringes 0.5 to 1 apart; on cells of
+0.1 the runs that went through them bunched in x₁ where the field did
+not, χ² of the runs' x₁ against the field's density 112 over 56 bins
+at the end, and the two histograms of x₁ differed by 2.6 times the
+statistical error in one bin, χ² 82.7 over 65. On cells of 0.05 that
+is gone, and each run's change of x₁ is the same as before to 2%.
