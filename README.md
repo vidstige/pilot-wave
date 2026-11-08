@@ -8,7 +8,8 @@ Positions drawn from |ψ|² at the start stay distributed as |ψ|², so an
 ensemble of deterministic trajectories reproduces the quantum
 statistics. Experiments are plain data: a stage, a source, a duration
 and a list of expectations, each a named measure with an expected
-value and a tolerance, checked after every run.
+value and a tolerance, checked after every run. See `GOAL.md` for
+what this is working towards.
 
 ![Single slit: the field, the trails, the build-up and the screen](images/single-slit.png)
 
@@ -72,16 +73,16 @@ on the field adds Holland's term ∇×(ρ ŝ)/2ρ to the guiding velocity,
 the de Broglie-Bohm velocity of the Pauli equation; it has no
 divergence, so the density evolves as without it.
 
-An experiment (`experiment.rs`) is a `Realisation`, a space, a grid,
-walls (slits or bands), potentials (ramps, harmonic confinement, a
-bond between two particles), a source (a packet, a pair, an EPR state,
-a relaxed molecule, a box at the end of a channel), a spin, a particle
-count, a duration, an optional screen with the closed form to compare
-it with, and expectations. The runner (`run.rs`) builds the field,
-samples the particles, steps both, and measures; where a measure
-compares against the twin, the experiment without its potentials, it
-runs the same starting points through that too. `report.rs` prints
-and writes.
+An experiment (`experiment.rs`) is a `Realisation`, a grid, walls as
+rectangles (with `slits` and `band` to build them), a potential and a
+source as plain functions of position and of the field, a spin, a
+particle count, a duration, an optional screen with the closed form
+to compare its current with, and expectations: named measures, each
+with an expected value and a tolerance. The runner (`run.rs`) builds
+the field, samples the particles, steps both, and measures; where a
+measure compares against the twin, the experiment without its
+potential, it runs the same starting points through that too.
+`report.rs` prints and writes.
 
 ## Experiments
 
@@ -103,7 +104,7 @@ obliquity factor, is the same.
 | expectation | expected | measured |
 |---|---|---|
 | fraction through the screen, the beam's share across the slit | 0.133 ± 0.010 | 0.1264 |
-| arrived fraction minus the probability through the screen | 0 ± 0.005 | −0.0007 |
+| probability through the screen, likewise | 0.133 ± 0.010 | 0.1271 |
 | rms gap between the current and Fraunhofer, of the peak | 0 ± 0.03 | 0.0177 |
 | rms gap between the arrivals and the current, of the peak | 0 ± 0.03 | 0.0257 |
 | current at the first zero of sinc², x = 17.2, of the peak | 0 ± 0.02 | 0.0095 |
@@ -129,7 +130,7 @@ theirs are 0.18 mrad apart against our 0.25 rad.
 | expectation | expected | measured |
 |---|---|---|
 | fraction through the screen, the beam's share across both slits | 0.126 ± 0.010 | 0.1184 |
-| arrived fraction minus the probability through the screen | 0 ± 0.005 | −0.0011 |
+| probability through the screen, likewise | 0.126 ± 0.010 | 0.1195 |
 | rms gap between the current and Fraunhofer, of the peak | 0 ± 0.035 | 0.0282 |
 | rms gap between the arrivals and the current, of the peak | 0 ± 0.03 | 0.0225 |
 | x of the first-order maximum, d sinθ = 1 | 7.7 ± 0.8 | 7.6 |
@@ -146,10 +147,10 @@ of identical particles come from the symmetry of the initial state
 alone: ψ(x₁, x₂) = ±ψ(x₂, x₁) is preserved by the dynamics.
 
 ```
-for e in distinguishable bosons fermions molecule molecule-break; do
+for e in distinguishable bosons fermions scattered molecule molecule-break; do
   cargo run --release -- run $e 20000 out/$e
 done
-.venv/bin/python tools/figures.py pairs molecule
+.venv/bin/python tools/figures.py pairs scattered molecule
 ```
 
 ### Pauli exclusion from a node
@@ -180,6 +181,37 @@ The one fermion run in 20000 that crossed is numerical: the node lies
 along the cells (i, i) themselves, and a substep that lands next to
 them can step over.
 
+### Entangled by meeting
+
+`scattered` is the two distinguishable packets again with a Gaussian
+bump of height 4.8 and range 0.4 between the particles, which at their
+relative energy of 4 lets about half the wave through and reflects
+the rest. Entangled by nothing but having met, the pair leaves in two
+branches: passed, particle 1 on the right and particle 2 on the left,
+or bounced, each back where it came from. Either way the particles
+end on opposite sides of the origin, so a measurement of one, which
+side it is found on, tells which side the other is on, however far
+apart they are; and the mutual information of the joint density, zero
+exactly for a product, stays at the entropy of the two branches, ln 2,
+while they separate. In this theory the measurement reads a position
+the particle already has, and the branch the pair is not in goes on
+as an empty wave. No laboratory can do this as it stands: it needs two
+particles in one dimension that interact only with each other, which
+is why it is here, as the simplest entanglement there is. It runs on
+a line twice as long, |x| ≤ 25.6, until t = 8, so that the slow tails
+of both branches clear the origin.
+
+![The scattered pair leaving in two branches](images/scattered.png)
+
+| expectation | expected | measured |
+|---|---|---|
+| fraction of runs in which the particles pass each other, the field's transmission | 0.5 ± 0.03 | 0.489 |
+| fraction of runs ending with the particles on opposite sides of the origin | 1 ± 0.005 | 0.996 |
+| mutual information of x₁ and x₂ in the field at the end, ln 2 | 0.693 ± 0.05 | 0.692 |
+
+The `distinguishable` control checks the other way: its mutual
+information at the end is zero, a product state.
+
 ### A molecule
 
 A Gaussian well U = −6 exp(−r²/0.32) in the separation binds exactly
@@ -202,7 +234,7 @@ diagonal; 0.15 stay bound.
 | expectation | molecule | molecule-break |
 |---|---|---|
 | fraction of the runs more than 3 apart at the end | 0 ± 0.002: 0.0004 | 0.85 ± 0.03: 0.846 |
-| that minus the probability apart, counting what left the line (± 0.02) | −0.004 | −0.002 |
+| probability apart at the end, counting what left the line | 0 ± 0.02: 0.0043 | 0.85 ± 0.03: 0.848 |
 
 ## Entanglement
 
@@ -241,7 +273,7 @@ far left is matched by a particle 2 that went far right (`entangled`).
 | expectation | expected | measured |
 |---|---|---|
 | correlation of x₁ and x₂ over the runs at t = 3.5, closed form | −0.659 ± 0.02 | −0.659 |
-| that correlation minus the field's | 0 ± 0.01 | 0.0007 |
+| correlation of x₁ and x₂ in the field, likewise | −0.659 ± 0.01 | −0.659 |
 
 ### Nonlocal guidance, no signalling
 

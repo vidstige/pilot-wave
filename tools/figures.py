@@ -106,6 +106,15 @@ def pairs() -> plt.Figure:
     return figure
 
 
+def scattered() -> plt.Figure:
+    """The pair meeting over the bump and leaving in two branches."""
+    extent, box = 51.2, (-14, 14, -14, 14)
+    figure, axes = plt.subplots(1, 4, figsize=(12, 3.4), layout="constrained")
+    for ax, t in zip(axes, [0, 2, 4, 8]):
+        show(ax, frame("scattered", t * 2), extent, box, f"scattered, t = {t}")
+    return figure
+
+
 def molecule() -> plt.Figure:
     """The bound pair bouncing off particle 1's wall, and breaking up."""
     extent, box = 25.6, (-10, 7, -10, 10)
@@ -175,6 +184,7 @@ FIGURES = {
     "single-slit": lambda: slit("single-slit"),
     "double-slit": lambda: slit("double-slit"),
     "pairs": pairs,
+    "scattered": scattered,
     "molecule": molecule,
     "entangled": entangled,
     "spin": spin,
