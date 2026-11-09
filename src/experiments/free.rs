@@ -1,14 +1,14 @@
 //! A packet travelling straight ahead, and the same packet meeting a
 //! wall: the sanity checks of motion, spreading and reflection.
 use crate::experiment::{
-    band, free, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS, SPEED,
+    band, free, Expectation, Experiment, Measure, Particle, Stage, ELECTRON, SPEED,
 };
-use crate::packet::Packet;
-use crate::wave::{effective_mass, group_velocity, Wave};
+use crate::wave::{effective_mass, group_velocity};
 
-/// The plane is |x|, |y| ≤ 25.6.
+/// The plane is |x|, |y| ≤ 25.6, one unit the electron's wavelength.
 const CELLS: usize = 512;
 const DX: f64 = 0.1;
+const SCALE: f64 = 50e-12;
 /// Where the packet starts, its width along both axes, the screen it
 /// crosses and how long it flies.
 const START: f64 = -15.0;
@@ -19,16 +19,13 @@ const DURATION: f64 = 4.0;
 const WALL: f64 = 5.0;
 const BEHIND: f64 = 8.0;
 
-pub const ELECTRON: Realisation = Realisation {
-    particle: "electron",
-    mass: ELECTRON_MASS,
-    length: 50e-12,
-    reference: "a 600 eV electron, as in the slit experiments; no particular experiment",
+const PACKET: Particle = Particle {
+    kind: ELECTRON,
+    position: [0.0, START],
+    velocity: [0.0, SPEED],
+    width: [WIDTH; 2],
+    spin: [0.0; 3],
 };
-
-fn packet(wave: &mut Wave) {
-    Packet { center: [0.0, START], width: [WIDTH; 2], wavevector: [0.0, SPEED] }.write(wave)
-}
 
 /// Width of |ψ|² after free spreading, σ(t) = σ₀ √(1 + t²/4m²σ₀⁴),
 /// with the mass the grid gives a packet along its motion.
@@ -67,14 +64,12 @@ fn flight(
     Experiment {
         name,
         summary,
-        realisation: ELECTRON,
-        cells: CELLS,
-        dx: DX,
-        walls,
-        potential: free,
-        source: packet,
-        spin: [0.0; 3],
-        particles: 20000,
+        reference: "free spreading of a Gaussian packet in closed form, and the stencil's \
+dispersion; no laboratory experiment",
+        stage: Stage { cells: CELLS, dx: DX, scale: SCALE, walls, potential: free },
+        particles: vec![PACKET],
+        state: None,
+        runs: 20000,
         duration: DURATION,
         screen: Some(screen),
         theory: None,
@@ -155,9 +150,9 @@ pub fn mirror() -> Experiment {
 The same packet meets a hard wall across the plane at y = 5 and comes \
 back: after a time of 4 its mean y should be the mirror image of the \
 free flight's in the wall, with the spread across the motion \
-as in free flight, and no particle beyond it. Where the incoming and the reflected wave overlap they \
-make a standing wave, and the particles slow and turn in its \
-near-nodes rather than crossing them.",
+as in free flight, and no particle beyond it. Where the incoming and \
+the reflected wave overlap they make a standing wave, and the \
+particles slow and turn in its near-nodes rather than crossing them.",
         vec![band(1, WALL, WALL + 0.4)],
         BEHIND,
         vec![

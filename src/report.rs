@@ -20,13 +20,17 @@ const DOTS: usize = 2000;
 const PLOT: (usize, usize) = (800, 300);
 
 pub fn describe(e: &Experiment) {
-    let r = &e.realisation;
-    println!("{}\n\n{}\n", e.name, e.summary);
-    println!("Realisation: {} ({}).", r.particle, r.reference);
+    let stage = &e.stage;
+    println!("{}\n\n{}\n\nReference: {}.\n", e.name, e.summary, e.reference);
+    for p in &e.particles {
+        println!("Particle: {} of {:.3e} kg at ({}, {}), moving at ({}, {}), its packet {} by {} wide, spin {:?}.",
+            p.kind.name, p.kind.mass, p.position[0], p.position[1], p.velocity[0], p.velocity[1],
+            p.width[0], p.width[1], p.spin);
+    }
     println!("One unit of length is {:.3e} m, of time {:.3e} s, of speed {:.3e} m/s, of energy {:.3e} J.",
-        r.length, r.time(), r.speed(), r.energy());
-    println!("The domain is {:.3e} m across; the run lasts {:.3e} s.\n", e.extent() * r.length, e.duration * r.time());
-    println!("Grid {} x {} cells of {}, dt {:.2e}, {} particles, duration {:.2}.", e.cells, e.cells, e.dx, e.dt(), e.particles, e.duration);
+        stage.scale, e.time(), e.speed(), e.energy());
+    println!("The stage is {:.3e} m across; a run lasts {:.3e} s.\n", e.extent() * stage.scale, e.duration * e.time());
+    println!("Grid {} x {} cells of {}, dt {:.2e}, {} runs, duration {:.2}.", stage.cells, stage.cells, stage.dx, e.dt(), e.runs, e.duration);
     println!("\nExpectations:");
     for x in &e.expectations {
         println!("  {:>8.4} ± {:<7.4} {}", x.expected, x.tolerance, x.what);

@@ -1,9 +1,7 @@
 //! Electrons through one slit: the sinc² diffraction pattern.
 use crate::experiment::{
-    fraunhofer, free, slits, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS, SPEED,
+    fraunhofer, free, slits, Expectation, Experiment, Measure, Particle, Stage, ELECTRON, SPEED,
 };
-use crate::packet::Packet;
-use crate::wave::Wave;
 
 const WIDTH: f64 = 2.0;
 /// The wall at y = 0, this thick, and the screen.
@@ -16,10 +14,20 @@ const TAIL: f64 = 25.0;
 /// Where the first zero of sinc²(πa sinθ), sinθ = 1/2, meets the screen.
 const FIRST_ZERO: f64 = 17.2;
 
-/// The beam of the slit experiments: a packet 6 wide across and 2
-/// long heading up at speed 2π.
-pub fn beam(wave: &mut Wave) {
-    Packet { center: [0.0, START], width: [6.0, 2.0], wavevector: [0.0, SPEED] }.write(wave)
+/// The electron of the slit experiments: a packet 6 wide across and
+/// 2 long heading up at speed 2π, its wavelength 1.
+pub const BEAM: Particle = Particle {
+    kind: ELECTRON,
+    position: [0.0, START],
+    velocity: [0.0, SPEED],
+    width: [6.0, 2.0],
+    spin: [0.0; 3],
+};
+
+/// The plane |x|, |y| ≤ 51.2, one unit the electron's wavelength of
+/// 50 pm, so the beam carries 600 eV.
+pub fn stage(walls: Vec<[[f64; 2]; 2]>) -> Stage {
+    Stage { cells: 1024, dx: 0.1, scale: 50e-12, walls, potential: free }
 }
 
 fn theory(x: f64) -> f64 {
@@ -35,31 +43,22 @@ A packet 6 wide across and 2 long heads up at speed 2π towards a wall \
 y = 30 counts what comes through. The arrivals along the screen, the \
 only thing a detector records, should follow the Fraunhofer pattern \
 sinc²(πa sinθ) cos²θ, with its first zeros at sinθ = ±1/2, x = ±17.2 \
-on the screen. Every particle is an independent run of the \
-one-particle experiment, since they share the field and never \
-interact, so one run with many particles is many runs with one; the \
-arrivals are recorded in order so the pattern can be watched \
+on the screen. Every run is one particle; the runs share the field \
+and never interact, so one run with many is many runs with one, and \
+the arrivals are recorded in order so the pattern can be watched \
 building up one particle at a time.",
-        realisation: Realisation {
-            particle: "electron",
-            mass: ELECTRON_MASS,
-            length: 50e-12,
-            reference: "Bach et al. 2013, 600 eV electrons; their slit was 62 nm, \
-over a thousand wavelengths, so their pattern sits at angles a thousand times smaller",
-        },
-        cells: 1024,
-        dx: 0.1,
-        walls: slits(0.0, THICKNESS, &[0.0], WIDTH),
-        potential: free,
-        source: beam,
-        spin: [0.0; 3],
-        particles: 40000,
+        reference: "Bach et al. 2013, 600 eV electrons; their slit was 62 nm, over a thousand \
+wavelengths, so their pattern sits at angles a thousand times smaller",
+        stage: stage(slits(0.0, THICKNESS, &[0.0], WIDTH)),
+        particles: vec![BEAM],
+        state: None,
+        runs: 40000,
         duration: (SCREEN - START + TAIL) / SPEED,
         screen: Some(SCREEN),
         theory: Some(theory),
         expectations: vec![
             Expectation {
-                what: "fraction of particles through the screen, the beam's share across the slit, erf(1/6√2)",
+                what: "fraction of runs through the screen, the beam's share across the slit, erf(1/6√2)",
                 measure: Measure::Arrived,
                 expected: 0.133,
                 tolerance: 0.01,

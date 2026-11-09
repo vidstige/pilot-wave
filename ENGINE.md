@@ -124,9 +124,9 @@ without it and the position statistics are untouched, but the
 trajectories differ: it circulates along the contours of the density.
 A spin in the plane contributes nothing in two dimensions.
 
-**Sampling.** Starting positions are drawn from |ψ|² on the grid: a
-cell by its probability, then uniformly within it. The seed is 1 for
-every run, so a run is reproducible.
+**Sampling.** Each run's starting position is drawn from |ψ|² on the
+grid: a cell by its probability, then uniformly within it. The seed
+is 1 for every experiment, so a run is reproducible.
 
 **Threads.** Particles step in chunks of at least 2000 on all cores,
 each thread reading the field.
@@ -179,20 +179,21 @@ it.
 
 ## Knobs an experiment turns
 
-Every field of `Experiment`:
+Every field of `Experiment`, grouped as the definition is:
 
 | field | what it sets |
 |---|---|
-| `cells`, `dx` | the grid: n × n cells of side dx, the plane |x|, |y| ≤ n·dx/2 |
-| `walls` | rectangles of hard wall, built with `slits` and `band` or written out |
-| `potential` | V(x, y), a plain function; its largest magnitude on the grid bounds dt |
-| `source` | writes ψ at t = 0: a `Packet`, or `Wave::fill` with any closed form |
-| `spin` | the spin direction; only its component normal to the plane acts |
-| `particles` | how many trajectories, each a run |
+| `name`, `summary`, `reference` | what it is, what should happen and why, and the paper or closed form it is checked against |
+| `stage.cells`, `stage.dx` | the grid: n × n cells of side dx, the plane |x|, |y| ≤ n·dx/2 |
+| `stage.scale` | the SI length of one unit, which with the particle's mass gives the units |
+| `stage.walls` | rectangles of hard wall, built with `slits` and `band` or written out |
+| `stage.potential` | V(x, y), a plain function, fixed for the run; its largest magnitude on the grid bounds dt |
+| `particles` | the particles in one run, one so far: kind (name, mass), position, velocity, packet width, spin |
+| `state` | ψ at the start written directly, when it is not the particle's Gaussian packet |
+| `runs` | how many times the one-particle run is repeated, each from its own start |
 | `duration` | how long to step, in engine time |
 | `screen` | height of the detection line, if any |
-| `theory` | the closed form along the screen the current is compared with, if any |
-| `realisation` | the particle and the SI length of one unit, for the printed conversions |
+| `theory` | the closed form along the screen the arrivals are compared with, if any |
 | `expectations` | named measures with expected values and tolerances |
 
 `dt` is derived, not chosen. Every experiment uses dx = 0.1, ten

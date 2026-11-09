@@ -1,8 +1,6 @@
 //! Electrons through two slits: cos² fringes under the sinc² envelope.
-use crate::experiment::{
-    fraunhofer, free, slits, Expectation, Experiment, Measure, Realisation, ELECTRON_MASS, SPEED,
-};
-use crate::experiments::single_slit::beam;
+use crate::experiment::{fraunhofer, slits, Expectation, Experiment, Measure, SPEED};
+use crate::experiments::single_slit::{stage, BEAM};
 
 const WIDTH: f64 = 1.0;
 const SEPARATION: f64 = 4.0;
@@ -27,36 +25,27 @@ pub fn double_slit() -> Experiment {
         name: "double-slit",
         summary: "\
 The same beam as the single slit meets a wall with two slits 1 wide and \
-4 apart, centre to centre. The current through the screen should show \
-cos²(πd sinθ) fringes under the sinc²(πa sinθ) envelope, orders at \
-sinθ = m/4, so maxima at x = 0, ±7.7, ±17 and minima between them, \
-and the particles should land on the bright fringes and avoid the \
-dark ones. In the trails each one goes through one slit or the other \
-and never crosses the axis of symmetry, which no detector could see \
-without destroying the fringes, so it is not expected, only shown. \
-The arrivals are recorded in order, so the fringes can be watched \
-building up one particle at a time.",
-        realisation: Realisation {
-            particle: "electron",
-            mass: ELECTRON_MASS,
-            length: 50e-12,
-            reference: "Bach et al. 2013, 600 eV electrons through slits 62 nm wide and 272 nm \
-apart: d/a = 4.4 against our 4, so about as many fringes fit under the envelope, but theirs \
-are 0.18 mrad apart against our 0.25 rad",
-        },
-        cells: 1024,
-        dx: 0.1,
-        walls: slits(0.0, THICKNESS, &[-SEPARATION / 2.0, SEPARATION / 2.0], WIDTH),
-        potential: free,
-        source: beam,
-        spin: [0.0; 3],
-        particles: 60000,
+4 apart, centre to centre. The arrivals should show cos²(πd sinθ) \
+fringes under the sinc²(πa sinθ) envelope, orders at sinθ = m/4, so \
+maxima at x = 0, ±7.7, ±17 and minima between them. In the trails each \
+particle goes through one slit or the other and never crosses the \
+axis of symmetry, which no detector could see without destroying the \
+fringes, so it is not expected, only shown. The arrivals are recorded \
+in order, so the fringes can be watched building up one particle at \
+a time.",
+        reference: "Bach et al. 2013, 600 eV electrons through slits 62 nm wide and 272 nm apart: \
+d/a = 4.4 against our 4, so about as many fringes fit under the envelope, but theirs are \
+0.18 mrad apart against our 0.25 rad",
+        stage: stage(slits(0.0, THICKNESS, &[-SEPARATION / 2.0, SEPARATION / 2.0], WIDTH)),
+        particles: vec![BEAM],
+        state: None,
+        runs: 60000,
         duration: (SCREEN - START + TAIL) / SPEED,
         screen: Some(SCREEN),
         theory: Some(theory),
         expectations: vec![
             Expectation {
-                what: "fraction of particles through the screen, the beam's share across both slits",
+                what: "fraction of runs through the screen, the beam's share across both slits",
                 measure: Measure::Arrived,
                 expected: 0.126,
                 tolerance: 0.01,

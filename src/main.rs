@@ -6,7 +6,7 @@ use pilot_wave::report::{self, FRAME_EVERY};
 use pilot_wave::run;
 use pilot_wave::wave::Vec2;
 
-const USAGE: &str = "pilot-wave list | describe <experiment> | run <experiment> [particles] [out]";
+const USAGE: &str = "pilot-wave list | describe <experiment> | run <experiment> [runs] [out]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
@@ -30,9 +30,9 @@ fn main() -> ExitCode {
         },
         Some("run") => match experiments::named(name) {
             Some(e) => {
-                let particles = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(e.particles);
+                let runs = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(e.runs);
                 let out = args.get(4).map(String::as_str).unwrap_or("out");
-                if run_and_report(&e, particles, out) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+                if run_and_report(&e, runs, out) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
             }
             None => {
                 eprintln!("unknown experiment {name}");
@@ -46,13 +46,13 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_and_report(e: &pilot_wave::experiment::Experiment, particles: usize, out: &str) -> bool {
+fn run_and_report(e: &pilot_wave::experiment::Experiment, runs: usize, out: &str) -> bool {
     std::fs::create_dir_all(out).expect("create output directory");
     report::describe(e);
     let per_frame = (FRAME_EVERY / e.dt()) as usize;
     let mut trails: Vec<Vec<Vec2>> = Vec::new();
     let mut peak = 0.0;
-    let outcome = run::run(e, particles, 1, |wave, particles, step| {
+    let outcome = run::run(e, runs, 1, |wave, particles, step| {
         if step == 0 {
             peak = wave.peak();
             trails = particles.positions.iter().take(300).map(|p| vec![*p]).collect();

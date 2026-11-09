@@ -25,14 +25,14 @@ pub struct Outcome {
 /// step.
 pub fn run(
     e: &Experiment,
-    particles: usize,
+    runs: usize,
     seed: u64,
     mut frame: impl FnMut(&Wave, &Particles, usize),
 ) -> Outcome {
     let mut wave = e.build();
     let mut rng = Rng::new(seed);
     let sampler = Sampler::new(&wave);
-    let start: Vec<Vec2> = (0..particles).map(|_| sampler.draw(&mut rng)).collect();
+    let start: Vec<Vec2> = (0..runs).map(|_| sampler.draw(&mut rng)).collect();
     let mut particles = Particles::new(start.clone());
     let mut screen = e.screen.map(|y| Screen::new(y, e.extent() / 2.0, BINS, start.len()));
     let mut glow = vec![0.0; wave.n * wave.n];

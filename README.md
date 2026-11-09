@@ -18,12 +18,12 @@ what this is working towards.
 ```
 cargo run --release -- list
 cargo run --release -- describe single-slit
-cargo run --release -- run single-slit [particles] [out]
+cargo run --release -- run single-slit [runs] [out]
 cargo test --release
 ```
 
-`describe` prints the experiment's summary, its physical realisation
-with the unit conversions, the grid, and the expectations. `run`
+`describe` prints the experiment's summary and reference, its
+particles, the unit conversions, the grid, and the expectations. `run`
 prints the same, runs, and ends with a verdict per expectation; it
 exits non-zero if any fails. It also writes frames
 `<out>/<experiment>_NNNN.png` every half time unit (hue is the phase,
@@ -42,9 +42,9 @@ with a Python venv holding numpy and matplotlib at `.venv`.
 
 The engine uses ħ = m = 1. A beam's wavelength is 1, so its
 wavenumber and speed are both 2π and its kinetic energy 2π². Each
-experiment names a physical realisation, a particle and the SI length
-of one unit, for a beam its de Broglie wavelength λ, and the units
-follow: time mλ²/ħ, speed ħ/(mλ), energy ħ²/(mλ²). For a 600 eV
+experiment names its particle's mass and its stage's scale, the SI
+length of one unit, for a beam its de Broglie wavelength λ, and the
+units follow: time mλ²/ħ, speed ħ/(mλ), energy ħ²/(mλ²). For a 600 eV
 electron (λ = 50 pm) one unit of length is 50 pm, of time
 2.16·10⁻¹⁷ s, of speed 2.3·10⁶ m/s and of energy 30.5 eV; `describe`
 prints these for every experiment.
@@ -68,16 +68,22 @@ A spin direction on the field adds Holland's term ∇×(ρ ŝ)/2ρ to the
 guiding velocity, the de Broglie-Bohm velocity of the Pauli equation;
 it has no divergence, so the density evolves as without it.
 
-An experiment (`experiment.rs`) is a `Realisation`, a grid, walls as
-rectangles (with `slits` and `band` to build them), a potential and a
-source as plain functions of position and of the field, a spin, a
-particle count, a duration, an optional screen with the closed form
-to compare its current with, and expectations: named measures, each
-with an expected value and a tolerance. The runner (`run.rs`) builds
-the field, samples the particles, steps both, and measures;
-`report.rs` prints and writes. `ENGINE.md` describes the engine in
-detail: the scheme, the decisions behind it, and which knobs an
-experiment turns against which are fixed in the code.
+An experiment (`experiment.rs`) is a stage, the particles, a run
+count, a duration, a detector and expectations. The stage is the
+grid, what one unit of length is in metres, the hard walls as
+rectangles (with `slits` and `band` to build them) and the potential
+V(x, y), a plain function, all fixed before the run. A particle is a
+kind (name and mass), a position, a velocity and the width of the
+packet that carries it; the field at the start is that Gaussian
+packet, unless the experiment writes a state of its own, as the spin
+channel does with its box. There is one particle per run so far,
+since the field is a plane, and the run count says how many times the
+run is repeated, each from its own start drawn from |ψ|²; the runs
+share the field and never interact, so one run with many is many runs
+with one. The detector is a screen height and, optionally, the closed
+form the arrivals are compared with. The runner (`run.rs`) builds the
+field, samples the runs, steps both, and measures; `report.rs`
+prints and writes.
 
 ## Experiments
 
@@ -170,7 +176,7 @@ so one run with 40000 particles is 40000 runs with one, and the
 arrivals are recorded in order so the pattern can be watched building
 up one particle at a time, as in the electron build-up films.
 
-Realisation: a 600 eV electron, as in Bach et al. (2013), whose slit
+Reference: a 600 eV electron, as in Bach et al. (2013), whose slit
 was 62 nm, over a thousand wavelengths, so their pattern sits at angles
 a thousand times smaller than ours; the shape, sinc² with a cos²
 obliquity factor, is the same.
@@ -189,7 +195,7 @@ orders at sinθ = m/4. Each particle goes through one slit or the
 other and never crosses the axis of symmetry, which no detector could
 see without destroying the fringes, so it is shown in the trails and
 not expected; the ensemble lands on the fringes, which build up one
-particle at a time as in the electron films. The realisation is again the 600 eV electron of Bach
+particle at a time as in the electron films. The reference is again the 600 eV electron of Bach
 et al. (2013), whose slits were 62 nm wide and 272 nm apart: d/a = 4.4
 against our 4, so about as many fringes fit under the envelope, but
 theirs are 0.18 mrad apart against our 0.25 rad.
@@ -250,7 +256,7 @@ cargo run --release -- run spin-normal 20000 out/spin-normal
 | fraction arriving after t = 90 | 0.10 ± 0.01: 0.098 | 0 ± 0.01: 0.0000 |
 | mean arrival time | 60.5 ± 1: 60.5 | 55 ± 1: 55.0 |
 
-The realisation is the electron of Das and Dürr with a box 50 μm long,
+The scale is that of Das and Dürr, an electron in a box 50 μm long,
 one unit 12.5 μm, so the line is 0.5 mm down the guide and the unit
 of time is 1.35 μs; the units `describe` prints. Their guide is a
 cylinder and ours a strip, so the numbers differ, but the mechanism

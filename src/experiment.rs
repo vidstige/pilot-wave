@@ -1,16 +1,17 @@
-//! An experiment as data: the stage, the source, how long it runs and
-//! what is expected, in the engine's units with the conversion to a
-//! physical realisation. No I/O.
+//! An experiment as data: the stage, the particles, how many runs,
+//! how long, the detector and what is expected, in the engine's units
+//! with the conversion to SI. No I/O.
 //!
-//! Engine units: ħ = m = 1. A beam's wavelength is 1, so its wavenumber
-//! and speed are both 2π and its kinetic energy 2π². A realisation
-//! names the particle and the SI length of one unit, from which the
-//! units of time, energy and speed follow.
+//! Engine units: ħ = m = 1, so a velocity is a wavenumber. A beam's
+//! wavelength is 1, so its speed is 2π and its kinetic energy 2π².
+//! The particle's mass and the stage's scale, the SI length of one
+//! unit, give the units of time, energy and speed.
 //!
 //! Every particle is an independent run of the one-particle
 //! experiment: they share the field and never interact.
 use std::f64::consts::{PI, TAU};
 
+use crate::packet::Packet;
 use crate::wave::{stable_dt, Vec2, Wave};
 
 pub const SPEED: f64 = TAU;
@@ -28,30 +29,42 @@ pub type Source = fn(&mut Wave);
 /// A closed form along the screen.
 pub type Curve = fn(f64) -> f64;
 
-/// A physical particle and the SI length of one engine unit: for a
-/// beam, its de Broglie wavelength.
-#[derive(Clone)]
-pub struct Realisation {
-    pub particle: &'static str,
-    /// Mass in kg and unit length in m.
+/// A kind of particle: its name and its mass in kg, which with the
+/// stage's scale gives the units.
+#[derive(Clone, Copy)]
+pub struct Kind {
+    pub name: &'static str,
     pub mass: f64,
-    pub length: f64,
-    pub reference: &'static str,
 }
 
-impl Realisation {
-    /// SI value of one engine unit of time, energy and speed.
-    pub fn time(&self) -> f64 {
-        self.mass * self.length * self.length / HBAR
-    }
+pub const ELECTRON: Kind = Kind { name: "electron", mass: ELECTRON_MASS };
 
-    pub fn energy(&self) -> f64 {
-        HBAR * HBAR / (self.mass * self.length * self.length)
-    }
+/// A particle in a run: its kind, where it starts, how fast it moves,
+/// and the spread of the packet that carries it, standard deviations
+/// of |ψ|² along x and y. The field at the start is the Gaussian
+/// packet with these moments, unless the experiment's `state` writes
+/// ψ itself. The spin is a unit vector or zero for a spinless
+/// particle; only its component normal to the plane steers the
+/// trajectories, a spin in the plane leaving them as spinless.
+#[derive(Clone, Copy)]
+pub struct Particle {
+    pub kind: Kind,
+    pub position: Vec2,
+    pub velocity: Vec2,
+    pub width: Vec2,
+    pub spin: [f64; 3],
+}
 
-    pub fn speed(&self) -> f64 {
-        HBAR / (self.mass * self.length)
-    }
+/// Where the experiment happens: the grid, what one unit of length
+/// is in metres, the hard walls and the potential V(x, y) the field
+/// moves in, all fixed before the run.
+#[derive(Clone)]
+pub struct Stage {
+    pub cells: usize,
+    pub dx: f64,
+    pub scale: f64,
+    pub walls: Vec<Rect>,
+    pub potential: Potential,
 }
 
 /// What a run is asked about. An experiment expects only what a
@@ -102,22 +115,24 @@ pub struct Expectation {
 pub struct Experiment {
     pub name: &'static str,
     pub summary: &'static str,
-    pub realisation: Realisation,
-    pub cells: usize,
-    pub dx: f64,
-    pub walls: Vec<Rect>,
-    pub potential: Potential,
-    pub source: Source,
-    /// The spin direction of the pilot wave, a unit vector or zero for
-    /// a spinless particle. Only the component normal to the plane
-    /// steers the trajectories; a spin in the plane leaves them as
-    /// spinless.
-    pub spin: [f64; 3],
-    pub particles: usize,
+    /// The laboratory experiment or closed form this one is checked
+    /// against.
+    pub reference: &'static str,
+    pub stage: Stage,
+    /// The particles in one run; one so far, since the field is a
+    /// plane.
+    pub particles: Vec<Particle>,
+    /// ψ at the start written directly, for a state that is not the
+    /// particle's Gaussian packet.
+    pub state: Option<fn(&mut Wave)>,
+    /// How many times the run is repeated, each from its own start
+    /// drawn from |ψ|²; they share the field and never interact, so
+    /// one run with many is many runs with one.
+    pub runs: usize,
     pub duration: f64,
     /// y of the line where arrivals are counted.
     pub screen: Option<f64>,
-    /// The closed form the screen's current is compared with.
+    /// The closed form the arrivals along the screen are compared with.
     pub theory: Option<Curve>,
     pub expectations: Vec<Expectation>,
 }
@@ -166,34 +181,67 @@ pub fn fraunhofer(x: f64, d: f64, centers: &[f64], width: f64) -> f64 {
 
 impl Experiment {
     pub fn extent(&self) -> f64 {
-        self.cells as f64 * self.dx
+        self.stage.cells as f64 * self.stage.dx
+    }
+
+    /// The one particle the field carries.
+    pub fn particle(&self) -> &Particle {
+        let [p] = &self.particles[..] else { panic!("one particle per run so far") };
+        p
+    }
+
+    /// SI value of one engine unit of time, energy and speed, from
+    /// the particle's mass and the stage's scale.
+    pub fn time(&self) -> f64 {
+        let (m, l) = (self.particle().kind.mass, self.stage.scale);
+        m * l * l / HBAR
+    }
+
+    pub fn energy(&self) -> f64 {
+        let (m, l) = (self.particle().kind.mass, self.stage.scale);
+        HBAR * HBAR / (m * l * l)
+    }
+
+    pub fn speed(&self) -> f64 {
+        HBAR / (self.particle().kind.mass * self.stage.scale)
     }
 
     /// The largest stable step, which the potential's largest
     /// magnitude on the grid bounds.
     pub fn dt(&self) -> f64 {
-        let wave = Wave::new(self.cells, self.dx);
-        let at = |k: usize| (self.potential)(wave.position((k % wave.n, k / wave.n))).abs();
-        stable_dt(self.dx, (0..wave.n * wave.n).map(at).fold(0.0, f64::max))
+        let wave = Wave::new(self.stage.cells, self.stage.dx);
+        let at = |k: usize| (self.stage.potential)(wave.position((k % wave.n, k / wave.n))).abs();
+        stable_dt(self.stage.dx, (0..wave.n * wave.n).map(at).fold(0.0, f64::max))
     }
 
     /// The field at the start: sponge at the edges, walls cut out
-    /// after it so they stay whole, the potential, then the source.
+    /// after it so they stay whole, the potential, then the
+    /// particle's packet or the given state.
     pub fn build(&self) -> Wave {
-        let mut wave = Wave::new(self.cells, self.dx);
-        wave.spin = self.spin[2];
+        let stage = &self.stage;
+        let particle = self.particle();
+        let mut wave = Wave::new(stage.cells, stage.dx);
+        wave.spin = particle.spin[2];
         wave.absorb_edges(self.dt());
         for j in 0..wave.n {
             for i in 0..wave.n {
                 let p = wave.position((i, j));
                 let k = wave.index((i, j));
-                if self.walls.iter().any(|w| inside(w, p)) {
+                if stage.walls.iter().any(|w| inside(w, p)) {
                     wave.keep[k] = 0.0;
                 }
-                wave.potential[k] = (self.potential)(p) as f32;
+                wave.potential[k] = (stage.potential)(p) as f32;
             }
         }
-        (self.source)(&mut wave);
+        match self.state {
+            Some(state) => state(&mut wave),
+            None => Packet {
+                center: particle.position,
+                width: particle.width,
+                wavevector: particle.velocity,
+            }
+            .write(&mut wave),
+        }
         wave
     }
 
@@ -215,9 +263,9 @@ mod tests {
     }
 
     #[test]
-    fn electron_realisation_recovers_its_kinetic_energy() {
-        let r = Realisation { particle: "electron", mass: ELECTRON_MASS, length: 50e-12, reference: "" };
-        let ev = ENERGY * r.energy() / ELECTRON_VOLT;
+    fn an_electron_at_fifty_picometres_has_six_hundred_electron_volts() {
+        let e = crate::experiments::single_slit::single_slit();
+        let ev = ENERGY * e.energy() / ELECTRON_VOLT;
         assert!((ev - 602.0).abs() < 2.0, "{ev}");
     }
 

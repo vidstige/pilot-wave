@@ -2,13 +2,14 @@
 //! coherent state, which swings like a classical particle.
 use std::f64::consts::PI;
 
-use crate::experiment::{Expectation, Experiment, Measure, Realisation, ELECTRON_MASS};
-use crate::packet::Packet;
-use crate::wave::{Vec2, Wave};
+use crate::experiment::{Expectation, Experiment, Measure, Particle, Stage, ELECTRON};
+use crate::wave::Vec2;
 
-/// The plane is |x|, |y| ≤ 25.6.
+/// The plane is |x|, |y| ≤ 25.6, one unit 10 nm: an electron in a
+/// quantum dot, for scale only, with ħω = 0.38 meV.
 const CELLS: usize = 512;
 const DX: f64 = 0.1;
+const SCALE: f64 = 10e-9;
 /// The trap's frequency; its ground state is a Gaussian of width
 /// 1/√(2ω) = 1 and its period 2π/ω. The potential is held at CAP far
 /// out, where the state is negligible, so the time step stays large.
@@ -19,29 +20,19 @@ const CAP: f64 = 50.0;
 /// How far the coherent state starts from the centre.
 const SWING: f64 = 4.0;
 
-const REALISATION: Realisation = Realisation {
-    particle: "electron in a quantum dot, one unit 10 nm",
-    mass: ELECTRON_MASS,
-    length: 10e-9,
-    reference: "for scale only, ħω = 0.38 meV; no particular experiment",
-};
-
 fn trap(p: Vec2) -> f64 {
     (0.5 * OMEGA * OMEGA * (p[0] * p[0] + p[1] * p[1])).min(CAP)
 }
 
-fn ground_state(wave: &mut Wave) {
-    Packet { center: [0.0; 2], width: [WIDTH; 2], wavevector: [0.0; 2] }.write(wave)
-}
-
-fn displaced(wave: &mut Wave) {
-    Packet { center: [SWING, 0.0], width: [WIDTH; 2], wavevector: [0.0; 2] }.write(wave)
+/// The ground-state Gaussian at rest, displaced to x.
+const fn at_rest(x: f64) -> Particle {
+    Particle { kind: ELECTRON, position: [x, 0.0], velocity: [0.0; 2], width: [WIDTH; 2], spin: [0.0; 3] }
 }
 
 fn trapped(
     name: &'static str,
     summary: &'static str,
-    source: fn(&mut Wave),
+    particle: Particle,
     duration: f64,
     expectations: Vec<Expectation>,
 ) -> Experiment {
@@ -55,14 +46,12 @@ fn trapped(
     Experiment {
         name,
         summary,
-        realisation: REALISATION,
-        cells: CELLS,
-        dx: DX,
-        walls: vec![],
-        potential: trap,
-        source,
-        spin: [0.0; 3],
-        particles: 20000,
+        reference: "the harmonic oscillator's ground and coherent states in closed form; no \
+laboratory experiment",
+        stage: Stage { cells: CELLS, dx: DX, scale: SCALE, walls: vec![], potential: trap },
+        particles: vec![particle],
+        state: None,
+        runs: 20000,
         duration,
         screen: None,
         theory: None,
@@ -80,7 +69,7 @@ wavefunction up to a global phase, so its phase gradient is zero \
 everywhere and every particle stands still, although the state's \
 momentum distribution is as wide as its position distribution. The \
 density should not change either.",
-        ground_state,
+        at_rest(0.0),
         PERIOD,
         vec![
             Expectation {
@@ -109,7 +98,7 @@ following the classical motion x = 4 cos ωt. Its phase is linear in \
 position, so every particle has the same velocity as the centre and \
 moves with it: after half a period each particle has moved exactly 8, \
 the mean x is −4 and the spread is still 1.",
-        displaced,
+        at_rest(SWING),
         PERIOD / 2.0,
         vec![
             Expectation {

@@ -1,13 +1,14 @@
 //! Tunnelling through a rectangular barrier: the textbook transmission,
 //! and which particles get through.
-use crate::experiment::{Expectation, Experiment, Measure, ENERGY, SPEED};
-use crate::experiments::free::ELECTRON;
-use crate::packet::Packet;
-use crate::wave::{Vec2, Wave};
+use crate::experiment::{
+    Expectation, Experiment, Measure, Particle, Stage, ELECTRON, ENERGY, SPEED,
+};
+use crate::wave::Vec2;
 
-/// The plane is |x|, |y| ≤ 25.6.
+/// The plane is |x|, |y| ≤ 25.6, one unit the electron's wavelength.
 const CELLS: usize = 512;
 const DX: f64 = 0.1;
+const SCALE: f64 = 50e-12;
 /// The barrier across the plane from y = 0, four cells wide and 1.2
 /// times the packet's energy high.
 const WIDTH: f64 = 0.4;
@@ -21,12 +22,16 @@ const TAIL: f64 = 8.0;
 /// Samples on each side of the centre when averaging over the spread.
 const QUADRATURE: i32 = 4000;
 
+const PACKET: Particle = Particle {
+    kind: ELECTRON,
+    position: [0.0, START],
+    velocity: [0.0, SPEED],
+    width: WIDTHS,
+    spin: [0.0; 3],
+};
+
 fn barrier(p: Vec2) -> f64 {
     if (0.0..WIDTH).contains(&p[1]) { HEIGHT } else { 0.0 }
-}
-
-fn packet(wave: &mut Wave) {
-    Packet { center: [0.0, START], width: WIDTHS, wavevector: [0.0, SPEED] }.write(wave)
 }
 
 /// Transmission through a rectangular barrier for a plane wave of
@@ -67,14 +72,12 @@ decided by where they start: trajectories in one dimension cannot \
 cross, so the ones that get through are exactly the ones that \
 started at the front of the packet, the leading share equal to the \
 transmission.",
-        realisation: ELECTRON,
-        cells: CELLS,
-        dx: DX,
-        walls: vec![],
-        potential: barrier,
-        source: packet,
-        spin: [0.0; 3],
-        particles: 20000,
+        reference: "the rectangular barrier of the textbooks, averaged over the packet's spread \
+of wavenumbers; no laboratory experiment",
+        stage: Stage { cells: CELLS, dx: DX, scale: SCALE, walls: vec![], potential: barrier },
+        particles: vec![PACKET],
+        state: None,
+        runs: 20000,
         duration: (SCREEN - START + TAIL) / SPEED,
         screen: Some(SCREEN),
         theory: None,
