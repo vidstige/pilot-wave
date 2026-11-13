@@ -95,8 +95,6 @@ pub enum Measure {
     /// the axis at the end.
     Mean { axis: usize },
     Spread { axis: usize },
-    /// Median distance the particles moved from where they started.
-    Moved,
     /// Field: standard deviation of the density along the axis, and
     /// the probability left, at the end.
     FieldSpread { axis: usize },

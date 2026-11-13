@@ -141,8 +141,8 @@ and only its first crossing counts.
 **Exact positions.** Since every particle's position is known, the
 sanity checks can ask things no laboratory can: whether the
 particles that tunnelled were the ones at the front of the packet
-(`ArrivedFromFront`), how far each one moved (`Moved`), and whether
-the ensemble's spread matches the field's (`Spread`, `FieldSpread`).
+(`ArrivedFromFront`) and whether the ensemble's spread matches the
+field's (`Spread`, `FieldSpread`).
 The double slit's trails show every particle keeping to its own side
 of the axis, but that is not expected, since no detector could see
 it.

@@ -129,12 +129,6 @@ pub fn measure(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
             let m = mean(*axis);
             (runs.iter().map(|p| (p[*axis] - m).powi(2)).sum::<f64>() / n).sqrt()
         }
-        Measure::Moved => {
-            let mut d: Vec<f64> =
-                o.start.iter().zip(runs).map(|(s, p)| (p[0] - s[0]).hypot(p[1] - s[1])).collect();
-            d.sort_by(f64::total_cmp);
-            d[d.len() / 2]
-        }
         Measure::FieldSpread { axis } => field_spread(&o.wave, *axis),
         Measure::Norm => o.wave.norm(),
         _ => on_screen(e, o, measure),
