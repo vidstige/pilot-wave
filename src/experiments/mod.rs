@@ -6,14 +6,11 @@ pub mod double_slit;
 pub mod free;
 pub mod single_slit;
 pub mod spin;
-pub mod trap;
 
 pub fn all() -> Vec<Experiment> {
     vec![
         free::free_flight(),
         free::mirror(),
-        trap::ground(),
-        trap::coherent(),
         barrier::tunnelling(),
         single_slit::single_slit(),
         double_slit::double_slit(),

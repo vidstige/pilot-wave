@@ -91,16 +91,14 @@ def slit(name: str) -> plt.Figure:
 
 
 def sanity() -> plt.Figure:
-    """Trails of the free packet, the mirror, the barrier and the trap."""
+    """Trails of the free packet, the mirror and the barrier."""
     extent = 51.2
     panels = [
         ("free", (-8, 8, -20, 16)),
         ("mirror", (-8, 8, -20, 8)),
         ("barrier", (-8, 8, -16, 10)),
-        ("ground", (-4, 4, -4, 4)),
-        ("coherent", (-7, 7, -5, 5)),
     ]
-    figure, axes = plt.subplots(1, 5, figsize=(13, 4.2), layout="constrained")
+    figure, axes = plt.subplots(1, 3, figsize=(8, 4.2), layout="constrained")
     for ax, (name, box) in zip(axes, panels):
         show(ax, trails(name), extent, box, f"{name}: 300 trails", aspect="auto")
     return figure

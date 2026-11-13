@@ -87,7 +87,7 @@ prints and writes.
 
 ## Experiments
 
-Nine experiments, each a file in `src/experiments/`. The first five
+Seven experiments, each a file in `src/experiments/`. The first three
 are sanity checks against closed forms, the slits and the spin
 experiment against published work. Every expectation is listed by
 `describe`, measured by `run`, and the tables below give the measured
@@ -120,15 +120,6 @@ this resolution and matches it at twenty cells per wavelength.
 its mean y the mirror image of the free flight's, nothing lost, no
 particle beyond the wall.
 
-`ground` and `coherent`: a harmonic trap V = ω²r²/2 with ω = 0.5. In
-the ground state, a Gaussian 1 wide, nothing moves: a stationary
-state has a real wavefunction up to a phase, so its phase gradient is
-zero and every particle stands still for a whole period. The same
-Gaussian displaced to x = 4 is a coherent state, which swings through
-the trap without changing shape; its phase is linear in position, so
-every particle moves with the centre and after half a period each one
-has moved exactly 8.
-
 `barrier`: a packet 6 wide across and 2 long meets a barrier 0.4 wide
 and 1.2 times its energy high across the whole plane, the textbook
 one-dimensional problem: T = 1/(1 + V² sinh²(κa)/4E(V − E)) with
@@ -140,13 +131,13 @@ in one dimension cannot cross, so the ones that get through are
 exactly the ones that started at the front of the packet.
 
 ```
-for e in free mirror ground coherent barrier; do
+for e in free mirror barrier; do
   cargo run --release -- run $e 20000 out/$e
 done
 .venv/bin/python tools/figures.py sanity
 ```
 
-![Trails of the free packet, the mirror, the barrier, the ground state and the coherent state](images/sanity.png)
+![Trails of the free packet, the mirror and the barrier](images/sanity.png)
 
 | expectation | expected | measured |
 |---|---|---|
@@ -159,10 +150,6 @@ done
 | free: fraction through the screen; field: probability left | 1 ± 0.001 | 0.9999, 1.0003 |
 | mirror: mean y at the end, mirrored in the wall | −0.008 ± 0.1 | 0.026 |
 | mirror: fraction beyond the wall | 0 ± 0.0001 | 0.0000 |
-| ground: median distance moved over a period | 0 ± 0.001 | 0.0000 |
-| ground: spread along x, the ground state's width | 1 ± 0.02 | 1.003 |
-| coherent: mean x after half a period | −4 ± 0.05 | −3.993 |
-| coherent: median distance moved, twice the swing | 8 ± 0.05 | 7.9998 |
 | barrier: fraction of particles through, averaged textbook T | 0.230 ± 0.02 | 0.215 |
 | barrier: fraction of the transmitted that started in the front | 1 ± 0.01 | 1.000 |
 
