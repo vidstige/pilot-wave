@@ -94,10 +94,21 @@ def sanity() -> plt.Figure:
     return figure
 
 
+def relaxation() -> plt.Figure:
+    """Runs started in a corner of the box, early and late."""
+    extent, box = 12.8, (-2.5, 2.5, -2.5, 2.5)
+    panels = [(0, "t = 0: half the runs in one corner"), (10, "t = 5"), (80, "t = 40: the halves alike")]
+    figure, axes = plt.subplots(1, 3, figsize=(9, 3.3), layout="constrained")
+    for ax, (index, title) in zip(axes, panels):
+        show(ax, frame("relaxation", index), extent, box, title)
+    return figure
+
+
 FIGURES = {
     "single-slit": lambda: slit("single-slit"),
     "double-slit": lambda: slit("double-slit"),
     "sanity": sanity,
+    "relaxation": relaxation,
 }
 
 if __name__ == "__main__":

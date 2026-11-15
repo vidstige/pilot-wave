@@ -23,11 +23,16 @@ pub struct Outcome {
 }
 
 /// Where the runs start: where the wave at the start is strong, as
-/// its square.
+/// its square, or for every other run evenly in the experiment's
+/// start rectangle.
 pub fn starts(e: &Experiment, runs: usize, seed: u64) -> Vec<Vec2> {
     let sampler = Sampler::new(&e.stage, |p| e.amplitude(p).iter().map(|a| a * a).sum());
     let mut rng = Rng::new(seed);
-    (0..runs).map(|_| sampler.draw(&mut rng)).collect()
+    let place = |k: usize| match e.start {
+        Some(rect) if k % 2 == 0 => rect.map(|[from, to]| from + rng.uniform() * (to - from)),
+        _ => sampler.draw(&mut rng),
+    };
+    (0..runs).map(place).collect()
 }
 
 /// Run to the experiment's duration, calling `frame` with the engine

@@ -30,6 +30,9 @@ pub fn describe(e: &Experiment, engine: &str, dt: f64) {
     println!("Particle: {} of {:.3e} kg at ({}, {}), moving at ({}, {}), its packet {} by {} wide.",
         p.kind.name, p.kind.mass, p.position[0], p.position[1], p.velocity[0], p.velocity[1],
         p.width[0], p.width[1]);
+    if let Some([x, y]) = e.start {
+        println!("Runs start evenly over x from {} to {} and y from {} to {}.", x[0], x[1], y[0], y[1]);
+    }
     println!("One unit of length is {:.3e} m, of time {:.3e} s, of speed {:.3e} m/s, of energy {:.3e} J.",
         stage.scale, e.time(), e.speed(), e.energy());
     println!("The stage is {:.3e} m across; a run lasts {:.3e} s.\n", stage.extent() * stage.scale, e.duration * e.time());

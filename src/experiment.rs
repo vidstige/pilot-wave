@@ -82,6 +82,11 @@ pub enum Measure {
     /// the axis at the end.
     Mean { axis: usize },
     Spread { axis: usize },
+    /// Share of the runs started in the experiment's rectangle that
+    /// would have to move for their counts in squares of the given
+    /// side to match those of the runs started at the source, at the
+    /// end: 0 when where a run started is forgotten.
+    Misplaced { side: f64 },
 }
 
 #[derive(Clone)]
@@ -105,6 +110,9 @@ pub struct Experiment {
     /// The wave at the start, when it is not the particle's Gaussian
     /// packet.
     pub state: Option<State>,
+    /// Where every other run starts, evenly over the rectangle,
+    /// instead of at the source.
+    pub start: Option<Rect>,
     /// How many times the run is repeated, each from its own start;
     /// the runs never interact.
     pub runs: usize,

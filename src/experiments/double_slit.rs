@@ -39,6 +39,7 @@ d/a = 4.4 against our 4, so about as many fringes fit under the envelope, but th
         stage: stage(slits(0.0, THICKNESS, &[-SEPARATION / 2.0, SEPARATION / 2.0], WIDTH)),
         particle: BEAM,
         state: None,
+        start: None,
         runs: 60000,
         duration: (SCREEN - START + TAIL) / SPEED,
         screen: Some(SCREEN),

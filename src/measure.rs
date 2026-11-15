@@ -1,6 +1,7 @@
 //! What a run's outcome says to each of an experiment's questions.
 //! No I/O.
 use crate::experiment::{Experiment, Measure};
+use crate::plane::Vec2;
 use crate::run::{Outcome, BINS};
 
 /// Scale a curve to the total of another.
@@ -12,6 +13,18 @@ fn scaled_to(curve: &[f64], reference: &[f64]) -> Vec<f64> {
 
 fn rms_gap(a: &[f64], b: &[f64]) -> f64 {
     (a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>() / a.len() as f64).sqrt()
+}
+
+/// Share of the even runs that would have to move for their counts
+/// in squares of the given side to match those of the odd runs.
+fn misplaced(runs: &[Vec2], extent: f64, side: f64) -> f64 {
+    let across = (extent / side).ceil() as usize;
+    let along = |x: f64| (((x + extent / 2.0) / side) as usize).min(across - 1);
+    let mut excess = vec![0.0; across * across];
+    for (k, p) in runs.iter().enumerate() {
+        excess[along(p[1]) * across + along(p[0])] += [1.0, -1.0][k % 2];
+    }
+    excess.iter().map(|e: &f64| e.abs()).sum::<f64>() / runs.len() as f64
 }
 
 fn on_screen(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
@@ -47,6 +60,24 @@ pub fn measure(e: &Experiment, o: &Outcome, measure: &Measure) -> f64 {
             let m = mean(*axis);
             (runs.iter().map(|p| (p[*axis] - m).powi(2)).sum::<f64>() / n).sqrt()
         }
+        Measure::Misplaced { side } => misplaced(runs, e.stage.extent(), *side),
         _ => on_screen(e, o, measure),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runs_taking_turns_in_the_same_squares_are_not_misplaced() {
+        let runs = [[0.2, 0.2], [0.4, 0.3], [-3.0, 1.0], [-3.2, 1.4]];
+        assert_eq!(misplaced(&runs, 12.8, 1.0), 0.0);
+    }
+
+    #[test]
+    fn runs_misplaced_are_the_share_in_squares_the_others_left_empty() {
+        let runs = [[0.2, 0.2], [0.4, 0.3], [-3.0, 1.0], [5.0, 5.0]];
+        assert_eq!(misplaced(&runs, 12.8, 1.0), 0.5);
     }
 }

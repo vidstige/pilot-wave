@@ -5,6 +5,7 @@ pub mod barrier;
 pub mod double_slit;
 pub mod free;
 pub mod mirror;
+pub mod relaxation;
 pub mod single_slit;
 
 pub fn all() -> Vec<Experiment> {
@@ -12,6 +13,7 @@ pub fn all() -> Vec<Experiment> {
         free::free_flight(),
         mirror::mirror(),
         barrier::tunnelling(),
+        relaxation::relaxation(),
         single_slit::single_slit(),
         double_slit::double_slit(),
     ]
