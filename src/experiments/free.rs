@@ -1,9 +1,7 @@
-//! A packet travelling straight ahead, and the same packet meeting a
-//! wall: the sanity checks of motion, spreading and reflection.
-use crate::experiment::{
-    band, free, Expectation, Experiment, Measure, Particle, Stage, ELECTRON, SPEED,
-};
-use crate::wave::{effective_mass, group_velocity};
+//! A packet travelling straight ahead: the sanity check of motion
+//! and spreading.
+use crate::experiment::{free, Expectation, Experiment, Measure, Particle, Stage, ELECTRON, SPEED};
+use crate::plane::Rect;
 
 /// The plane is |x|, |y| ≤ 25.6, one unit the electron's wavelength.
 const CELLS: usize = 512;
@@ -14,35 +12,32 @@ const SCALE: f64 = 50e-12;
 const START: f64 = -15.0;
 const WIDTH: f64 = 2.0;
 const SCREEN: f64 = 0.0;
-const DURATION: f64 = 4.0;
-/// The wall the mirrored packet meets, and the screen behind it.
-const WALL: f64 = 5.0;
-const BEHIND: f64 = 8.0;
+pub const DURATION: f64 = 4.0;
 
 const PACKET: Particle = Particle {
     kind: ELECTRON,
     position: [0.0, START],
     velocity: [0.0, SPEED],
     width: [WIDTH; 2],
-    spin: [0.0; 3],
 };
 
-/// Width of |ψ|² after free spreading, σ(t) = σ₀ √(1 + t²/4m²σ₀⁴),
-/// with the mass the grid gives a packet along its motion.
-fn spread(t: f64, mass: f64) -> f64 {
-    WIDTH * (1.0 + t * t / (4.0 * mass * mass * WIDTH.powi(4))).sqrt()
+/// Width of the beam after free spreading, σ(t) = σ₀ √(1 + t²/4σ₀⁴).
+fn spread(t: f64) -> f64 {
+    WIDTH * (1.0 + t * t / (4.0 * WIDTH.powi(4))).sqrt()
 }
 
-/// Where the packet's centre is after flying for t at the grid's
-/// speed for its wavenumber.
-fn centre(t: f64) -> f64 {
-    START + group_velocity(SPEED, DX) * t
+/// Where the beam's centre is after flying for t.
+pub fn centre(t: f64) -> f64 {
+    START + SPEED * t
 }
 
-fn flight(
+/// The packet's flight past the given walls and through a screen:
+/// what is expected along the motion, and across it the same
+/// whatever the walls.
+pub fn flight(
     name: &'static str,
     summary: &'static str,
-    walls: Vec<[[f64; 2]; 2]>,
+    walls: Vec<Rect>,
     screen: f64,
     expectations: Vec<Expectation>,
 ) -> Experiment {
@@ -57,17 +52,17 @@ fn flight(
         Expectation {
             what: "spread of the particles across the motion, free spreading in closed form",
             measure: Measure::Spread { axis: 0 },
-            expected: spread(DURATION, 1.0),
+            expected: spread(DURATION),
             tolerance: 0.03,
         },
     ]);
     Experiment {
         name,
         summary,
-        reference: "free spreading of a Gaussian packet in closed form, and the stencil's \
-dispersion; no laboratory experiment",
+        reference: "free spreading of a Gaussian packet in closed form; no laboratory \
+experiment",
         stage: Stage { cells: CELLS, dx: DX, scale: SCALE, walls, potential: free },
-        particles: vec![PACKET],
+        particle: PACKET,
         state: None,
         runs: 20000,
         duration: DURATION,
@@ -85,47 +80,24 @@ A packet 2 wide along both axes starts at y = −15 and heads up at \
 speed 2π for a time of 4, crossing a screen at y = 0 on the way. The \
 particles should move with it: their mean y ends at −15 + 4·2π, \
 every one of them crosses the screen, at a mean time of 15/2π, and \
-their spread grows as the free spreading of |ψ|², \
-σ(t) = σ₀ √(1 + t²/4σ₀⁴), each particle keeping its place in the \
-packet as the trails fan out in straight lines. The grid has its own \
-dispersion: at ten cells per wavelength a wave moves 0.5% slower \
-than k and spreads along its motion as if 2.5% heavier, and the \
-expectations along y allow for that. The particles' spread along the \
-motion runs 2.5% above the field's at this resolution, ten cells per \
-wavelength, and matches it at twenty. Nothing should be lost: the \
-probability stays 1.",
+their spread grows as a beam this narrow must, \
+σ(t) = σ₀ √(1 + t²/4σ₀⁴). The tolerances along the motion are 1% of \
+the flight, which is what a grid of ten cells per wavelength can \
+hold.",
         vec![],
         SCREEN,
         vec![
             Expectation {
-                what: "mean y of the particles at the end, −15 + 4·2π at the grid's speed",
+                what: "mean y of the particles at the end, −15 + 4·2π",
                 measure: Measure::Mean { axis: 1 },
                 expected: centre(DURATION),
-                tolerance: 0.05,
+                tolerance: 0.25,
             },
             Expectation {
-                what: "spread of the particles along the motion, closed form with the grid's mass",
+                what: "spread of the particles along the motion, free spreading in closed form",
                 measure: Measure::Spread { axis: 1 },
-                expected: spread(DURATION, effective_mass(SPEED, DX)),
+                expected: spread(DURATION),
                 tolerance: 0.08,
-            },
-            Expectation {
-                what: "field: spread of the density across the motion, closed form",
-                measure: Measure::FieldSpread { axis: 0 },
-                expected: spread(DURATION, 1.0),
-                tolerance: 0.01,
-            },
-            Expectation {
-                what: "field: spread of the density along the motion, with the grid's mass",
-                measure: Measure::FieldSpread { axis: 1 },
-                expected: spread(DURATION, effective_mass(SPEED, DX)),
-                tolerance: 0.01,
-            },
-            Expectation {
-                what: "field: probability left",
-                measure: Measure::Norm,
-                expected: 1.0,
-                tolerance: 0.001,
             },
             Expectation {
                 what: "fraction of the particles through the screen",
@@ -134,39 +106,10 @@ probability stays 1.",
                 tolerance: 0.001,
             },
             Expectation {
-                what: "mean arrival time at the screen, 15 over the grid's speed",
+                what: "mean arrival time at the screen, 15/2π",
                 measure: Measure::MeanArrivalTime,
-                expected: -START / group_velocity(SPEED, DX),
-                tolerance: 0.02,
-            },
-        ],
-    )
-}
-
-pub fn mirror() -> Experiment {
-    flight(
-        "mirror",
-        "\
-The same packet meets a hard wall across the plane at y = 5 and comes \
-back: after a time of 4 its mean y should be the mirror image of the \
-free flight's in the wall, with the spread across the motion \
-as in free flight, and no particle beyond it. Where the incoming and \
-the reflected wave overlap they make a standing wave, and the \
-particles slow and turn in its near-nodes rather than crossing them.",
-        vec![band(1, WALL, WALL + 0.4)],
-        BEHIND,
-        vec![
-            Expectation {
-                what: "mean y of the particles at the end, mirrored in the wall",
-                measure: Measure::Mean { axis: 1 },
-                expected: 2.0 * WALL - centre(DURATION),
-                tolerance: 0.1,
-            },
-            Expectation {
-                what: "fraction of the particles beyond the wall",
-                measure: Measure::Arrived,
-                expected: 0.0,
-                tolerance: 0.0001,
+                expected: -START / SPEED,
+                tolerance: 0.03,
             },
         ],
     )

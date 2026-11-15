@@ -10,9 +10,7 @@ OUT = "out"
 IMAGES = "images"
 DPI = 100
 HITS = "#9a9890"
-FLUX = "#2a78d6"
 THEORY = "#eb6834"
-INK = "#2b2a28"
 
 plt.rcParams.update({"figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb", "font.size": 10})
 
@@ -40,22 +38,14 @@ def trails(name: str) -> str:
     return f"{OUT}/{name}/{name}_trails.png"
 
 
-def tidy(ax, xlabel: str, ylabel: str):
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-
-
 def screen(ax, name: str, reach: float):
     d = np.genfromtxt(f"{OUT}/{name}/{name}_screen.csv", delimiter=",", names=True)
     width = d["x"][1] - d["x"][0]
     ax.bar(d["x"], d["hits"], width=width, color=HITS, label="arrivals")
-    ax.plot(d["x"], d["flux"], color=FLUX, lw=2, label="probability current")
     ax.plot(d["x"], d["theory"], color=THEORY, lw=1.5, ls="--", label="Fraunhofer")
     ax.set_xlim(-reach, reach)
     ax.set_xlabel("x on the screen (wavelengths)")
-    ax.set_ylabel("probability per bin")
+    ax.set_ylabel("share of the runs per bin")
     ax.legend(frameon=False, fontsize=9)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
@@ -82,9 +72,9 @@ def slit(name: str) -> plt.Figure:
     figure = plt.figure(figsize=(12, 10), layout="constrained")
     top, middle, bottom = figure.subfigures(3, 1, height_ratios=[1.6, 0.5, 1])
     axes = top.subplots(1, 3)
-    show(axes[0], f"{OUT}/{name}/{name}_0008.png", extent, (-20, 20, -25, 15), "t = 4: at the slit")
-    show(axes[1], f"{OUT}/{name}/{name}_0016.png", extent, (-30, 30, -25, 35), "t = 8: at the screen")
-    show(axes[2], f"{OUT}/{name}/{name}_trails.png", extent, (-30, 30, -25, 35), "300 trails over the time-integrated density")
+    show(axes[0], frame(name, 8), extent, (-20, 20, -25, 15), "t = 4: at the slit")
+    show(axes[1], frame(name, 16), extent, (-30, 30, -25, 35), "t = 8: at the screen")
+    show(axes[2], trails(name), extent, (-30, 30, -25, 35), "300 trails over the time-integrated density")
     buildup(middle.subplots(1, 4), name, [20, 200, 2000, 10**9], reach)
     screen(bottom.subplots(), name, reach)
     return figure
@@ -104,38 +94,10 @@ def sanity() -> plt.Figure:
     return figure
 
 
-def spin() -> plt.Figure:
-    """Trajectories up the channel with the spin in and out of the
-    plane, and when the particles arrive."""
-    figure = plt.figure(figsize=(12, 7), layout="constrained")
-    left, right = figure.subfigures(1, 2, width_ratios=[1, 1.4])
-    axes = left.subplots(1, 2, sharey=True)
-    for ax, name in zip(axes, ["spin-in-plane", "spin-normal"]):
-        r = np.genfromtxt(f"{OUT}/{name}/{name}_trails.csv", delimiter=",", names=True)
-        for k in range(8):
-            trail = r[r["trail"] == k]
-            ax.plot(trail["x"], trail["y"], color=FLUX, lw=0.6)
-        ax.axhline(0, color=THEORY, ls="--", lw=1)
-        ax.set_xlim(-1.5, 1.5)
-        ax.set_ylim(-40.5, 3)
-        tidy(ax, "x", "y")
-        ax.set_title(f"{name}: 8 trajectories", fontsize=10)
-    ax = right.subplots()
-    edges = np.arange(0, 120, 1.0)
-    for name, color in [("spin-in-plane", HITS), ("spin-normal", FLUX)]:
-        a = np.genfromtxt(f"{OUT}/{name}/{name}_arrivals.csv", delimiter=",", names=True)
-        ax.hist(a["t"], edges, histtype="step", color=color, lw=1.5, label=name)
-    ax.set_yscale("log")
-    tidy(ax, "first arrival time at the line", "particles per unit time")
-    ax.legend(frameon=False, fontsize=9)
-    return figure
-
-
 FIGURES = {
     "single-slit": lambda: slit("single-slit"),
     "double-slit": lambda: slit("double-slit"),
     "sanity": sanity,
-    "spin": spin,
 }
 
 if __name__ == "__main__":

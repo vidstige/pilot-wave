@@ -1,7 +1,8 @@
-//! Draw positions from |ψ|² on the grid: a cell by its probability,
+//! Draw positions from a density over the stage: a cell by its share,
 //! then anywhere within it. No I/O.
+use crate::experiment::Stage;
+use crate::plane::Vec2;
 use crate::rng::Rng;
-use crate::wave::{Vec2, Wave};
 
 pub struct Sampler {
     cumulative: Vec<f64>,
@@ -11,40 +12,36 @@ pub struct Sampler {
 }
 
 impl Sampler {
-    pub fn new(wave: &Wave) -> Sampler {
+    pub fn new(stage: &Stage, density: impl Fn(Vec2) -> f64) -> Sampler {
         let mut total = 0.0;
-        let cumulative = (0..wave.n * wave.n)
+        let cumulative = (0..stage.cells * stage.cells)
             .map(|k| {
-                total += wave.density(k) as f64;
+                total += density(stage.position(k));
                 total
             })
             .collect();
-        Sampler { cumulative, n: wave.n, dx: wave.dx, half: wave.extent() / 2.0 }
+        Sampler { cumulative, n: stage.cells, dx: stage.dx, half: stage.extent() / 2.0 }
     }
 
     pub fn draw(&self, rng: &mut Rng) -> Vec2 {
         let total = *self.cumulative.last().unwrap();
         let u = rng.uniform() * total;
         let k = self.cumulative.partition_point(|&c| c < u).min(self.n * self.n - 1);
-        let (i, j) = (k % self.n, k / self.n);
-        [
-            (i as f64 + rng.uniform()) * self.dx - self.half,
-            (j as f64 + rng.uniform()) * self.dx - self.half,
-        ]
+        [k % self.n, k / self.n].map(|i| (i as f64 + rng.uniform()) * self.dx - self.half)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::experiment::free;
     use crate::packet::Packet;
 
     #[test]
     fn draws_spread_like_the_density() {
-        let mut wave = Wave::new(128, 0.1);
+        let stage = Stage { cells: 128, dx: 0.1, scale: 1.0, walls: vec![], potential: free };
         let packet = Packet { center: [1.0, -2.0], width: [0.5, 1.5], wavevector: [0.0; 2] };
-        packet.write(&mut wave);
-        let sampler = Sampler::new(&wave);
+        let sampler = Sampler::new(&stage, |p| packet.amplitude(p)[0].powi(2));
         let mut rng = Rng::new(3);
         let n = 4000;
         let draws: Vec<Vec2> = (0..n).map(|_| sampler.draw(&mut rng)).collect();

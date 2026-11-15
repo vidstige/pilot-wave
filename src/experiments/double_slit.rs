@@ -37,7 +37,7 @@ a time.",
 d/a = 4.4 against our 4, so about as many fringes fit under the envelope, but theirs are \
 0.18 mrad apart against our 0.25 rad",
         stage: stage(slits(0.0, THICKNESS, &[-SEPARATION / 2.0, SEPARATION / 2.0], WIDTH)),
-        particles: vec![BEAM],
+        particle: BEAM,
         state: None,
         runs: 60000,
         duration: (SCREEN - START + TAIL) / SPEED,

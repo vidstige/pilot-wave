@@ -10,9 +10,9 @@
 use std::sync::Mutex;
 use std::thread;
 
+use crate::packet::Complex;
+use crate::plane::Vec2;
 
-pub type Vec2 = [f64; 2];
-pub type Complex = [f64; 2];
 pub type Index = (usize, usize);
 
 /// Fourth order Laplacian stencil along one axis.
@@ -38,34 +38,18 @@ pub struct Wave {
     /// Per-cell survival factor applied each step: 0 in walls, below
     /// 1 in the sponge, 1 elsewhere.
     pub keep: Vec<f32>,
-    /// Steps taken so far times dt.
-    pub time: f64,
-    /// The spin's component normal to the plane, which adds Holland's
-    /// term ∇×(ρ ŝ)/2 to the current: divergence-free, so the density
-    /// evolves as without it, but the trajectories differ.
-    pub spin: f64,
-}
-
-/// Speed of a plane wave of wavenumber k on the grid: the group
-/// velocity of the stencil's dispersion, ½ the derivative of its
-/// discrete k², a little below k. At ten cells per wavelength it is
-/// 0.5% low.
-pub fn group_velocity(k: f64, dx: f64) -> f64 {
-    ((8.0 / 3.0) * (k * dx).sin() - (1.0 / 3.0) * (2.0 * k * dx).sin()) / (2.0 * dx)
-}
-
-/// The mass a packet of wavenumber k spreads with on the grid, the
-/// inverse curvature of the stencil's dispersion: 2.5% heavy at ten
-/// cells per wavelength, so a packet spreads that much slower along
-/// its motion than across it.
-pub fn effective_mass(k: f64, dx: f64) -> f64 {
-    1.0 / (0.5 * ((8.0 / 3.0) * (k * dx).cos() - (2.0 / 3.0) * (2.0 * k * dx).cos()))
 }
 
 /// Largest stable step for the given cell size and potential.
 pub fn stable_dt(dx: f64, potential_max: f64) -> f64 {
     let kinetic_max = 2.0 * 16.0 / 3.0 / (dx * dx) / 2.0;
     0.5 * 2.0 / (kinetic_max + potential_max)
+}
+
+/// Threads worth starting to sweep this many cells.
+fn threads(cells: usize) -> usize {
+    let cores = thread::available_parallelism().map_or(1, |t| t.get());
+    (cells / CELLS_PER_THREAD).clamp(1, cores)
 }
 
 /// One interior row of f ← (f + c H g) keep, given the five rows of g
@@ -194,8 +178,6 @@ impl Wave {
             im: vec![0.0; n * n],
             potential: vec![0.0; n * n],
             keep: vec![1.0; n * n],
-            time: 0.0,
-            spin: 0.0,
         }
     }
 
@@ -258,10 +240,6 @@ impl Wave {
         self.re[k] * self.re[k] + self.im[k] * self.im[k]
     }
 
-    pub fn peak(&self) -> f32 {
-        (0..self.n * self.n).map(|k| self.density(k)).fold(0.0, f32::max)
-    }
-
     /// Total probability, which stays near 1 until the sponge or a wall
     /// takes some.
     pub fn norm(&self) -> f64 {
@@ -271,24 +249,28 @@ impl Wave {
 
     /// Probability current Im(ψ* ∇ψ) and density |ψ|² at a cell, the
     /// gradient from a fourth order difference so a plane wave at ten
-    /// cells per wavelength comes out within 0.3%. With spin s normal
-    /// to the plane the current also carries s (∂ᵧρ, −∂ₓρ)/2.
+    /// cells per wavelength comes out within 0.3%.
+    // Inlined into the particles' loop, as `velocity` is: measured
+    // there.
+    #[inline]
     fn current(&self, k: usize) -> (Vec2, f64) {
-        let n = self.n;
         let grad = |f: &[f32], s: usize| {
-            (f[k - 2 * s] - 8.0 * f[k - s] + 8.0 * f[k + s] - f[k + 2 * s]) as f64 / (12.0 * self.dx)
+            let rise = f[k - 2 * s] - 8.0 * f[k - s] + 8.0 * f[k + s] - f[k + 2 * s];
+            rise as f64 / (12.0 * self.dx)
         };
         let (r, i) = (self.re[k] as f64, self.im[k] as f64);
         let along = |s| r * grad(&self.im, s) - i * grad(&self.re, s);
-        let half_density_gradient = |s| r * grad(&self.re, s) + i * grad(&self.im, s);
-        let spin = [self.spin * half_density_gradient(n), -self.spin * half_density_gradient(1)];
-        ([along(1) + spin[0], along(n) + spin[1]], r * r + i * i)
+        ([along(1), along(self.n)], r * r + i * i)
     }
 
     /// Guiding velocity, the current over the density, each
     /// interpolated between the surrounding cells before dividing so
     /// that the velocity still soars next to a node of ψ, where the
     /// particle must slow down and turn, and vanishes in walls.
+    // Inlined into the particles' loop, which takes its velocity as a
+    // function: on an M1 the barrier with 100000 runs takes 14.7 s,
+    // against 16.3 s with this and `current` called.
+    #[inline]
     pub fn velocity(&self, p: Vec2) -> Vec2 {
         let (x, y) = self.cell(p);
         let top = (self.n - 4) as f64;
@@ -318,8 +300,7 @@ impl Wave {
             potential: &self.potential,
             keep: &self.keep,
         };
-        let cores = thread::available_parallelism().map_or(1, |t| t.get());
-        let threads = (n * n / CELLS_PER_THREAD).clamp(1, cores);
+        let threads = threads(n * n);
         let band = n.div_ceil(threads * BANDS_PER_THREAD);
         let starts = (0..n).step_by(band);
         let halos: Vec<_> = starts
@@ -343,22 +324,12 @@ impl Wave {
             }
             work();
         });
-        self.time += dt as f64;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn dispersion_is_exact_for_long_waves_and_slow_at_ten_cells() {
-        assert!((group_velocity(0.01, 0.1) / 0.01 - 1.0).abs() < 1e-6);
-        assert!((effective_mass(0.01, 0.1) - 1.0).abs() < 1e-6);
-        let ratio = group_velocity(std::f64::consts::TAU, 0.1) / std::f64::consts::TAU;
-        assert!((ratio - 0.995).abs() < 0.001, "{ratio}");
-        assert!((effective_mass(std::f64::consts::TAU, 0.1) - 1.025).abs() < 0.001);
-    }
     use crate::packet::Packet;
 
     const DX: f64 = 0.1;
@@ -369,7 +340,7 @@ mod tests {
 
     fn free_wave() -> Wave {
         let mut wave = Wave::new(128, DX);
-        packet().write(&mut wave);
+        wave.fill(|p| packet().amplitude(p));
         wave
     }
 
@@ -422,7 +393,7 @@ mod tests {
     /// sponge, on a grid that splits unevenly among the cores.
     fn obstacle_course() -> Wave {
         let mut wave = Wave::new(101, DX);
-        packet().write(&mut wave);
+        wave.fill(|p| packet().amplitude(p));
         wave.absorb_edges(stable_dt(DX, 10.0));
         for j in 30..70 {
             for i in 55..60 {
@@ -477,7 +448,8 @@ mod tests {
     #[test]
     fn guiding_velocity_of_a_broad_packet_is_its_wavevector() {
         let mut wave = Wave::new(128, DX);
-        Packet { center: [0.0; 2], width: [3.0, 3.0], wavevector: [4.0, 1.0] }.write(&mut wave);
+        let packet = Packet { center: [0.0; 2], width: [3.0, 3.0], wavevector: [4.0, 1.0] };
+        wave.fill(|p| packet.amplitude(p));
         let v = wave.velocity([0.2, -0.3]);
         assert!((v[0] - 4.0).abs() < 0.01 && (v[1] - 1.0).abs() < 0.01, "{v:?}");
     }

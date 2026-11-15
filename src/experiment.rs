@@ -8,11 +8,11 @@
 //! unit, give the units of time, energy and speed.
 //!
 //! Every particle is an independent run of the one-particle
-//! experiment: they share the field and never interact.
+//! experiment: they never interact.
 use std::f64::consts::{PI, TAU};
 
-use crate::packet::Packet;
-use crate::wave::{stable_dt, Vec2, Wave};
+use crate::packet::{Complex, Packet};
+use crate::plane::{inside, Rect, Vec2};
 
 pub const SPEED: f64 = TAU;
 pub const ENERGY: f64 = SPEED * SPEED / 2.0;
@@ -20,12 +20,10 @@ pub const HBAR: f64 = 1.054_571_817e-34;
 pub const ELECTRON_MASS: f64 = 9.109_383_7e-31;
 pub const ELECTRON_VOLT: f64 = 1.602_176_634e-19;
 
-/// A rectangle [[x₀, x₁], [y₀, y₁]] of hard wall.
-pub type Rect = [[f64; 2]; 2];
 /// The potential at a position.
 pub type Potential = fn(Vec2) -> f64;
-/// Writes the initial ψ onto the field.
-pub type Source = fn(&mut Wave);
+/// The amplitude of the wave at the start, at a position.
+pub type State = fn(Vec2) -> Complex;
 /// A closed form along the screen.
 pub type Curve = fn(f64) -> f64;
 
@@ -41,23 +39,20 @@ pub const ELECTRON: Kind = Kind { name: "electron", mass: ELECTRON_MASS };
 
 /// A particle in a run: its kind, where it starts, how fast it moves,
 /// and the spread of the packet that carries it, standard deviations
-/// of |ψ|² along x and y. The field at the start is the Gaussian
-/// packet with these moments, unless the experiment's `state` writes
-/// ψ itself. The spin is a unit vector or zero for a spinless
-/// particle; only its component normal to the plane steers the
-/// trajectories, a spin in the plane leaving them as spinless.
+/// of where it may be along x and y. The wave at the start is the
+/// Gaussian packet with these moments, unless the experiment gives
+/// its `state`.
 #[derive(Clone, Copy)]
 pub struct Particle {
     pub kind: Kind,
     pub position: Vec2,
     pub velocity: Vec2,
     pub width: Vec2,
-    pub spin: [f64; 3],
 }
 
 /// Where the experiment happens: the grid, what one unit of length
-/// is in metres, the hard walls and the potential V(x, y) the field
-/// moves in, all fixed before the run.
+/// is in metres, the hard walls and the potential V(x, y), all fixed
+/// before the run.
 #[derive(Clone)]
 pub struct Stage {
     pub cells: usize,
@@ -67,16 +62,12 @@ pub struct Stage {
     pub potential: Potential,
 }
 
-/// What a run is asked about. An experiment expects only what a
-/// detector could record, the particles' positions, counts and times;
-/// the measures of the field are for the sanity checks of the solver.
+/// What a run is asked about: only what a detector could record,
+/// the particles' positions, counts and times.
 #[derive(Clone)]
 pub enum Measure {
     /// Fraction of the particles that crossed the screen.
     Arrived,
-    /// Fraction of the particles that first crossed the screen after
-    /// the given time.
-    ArrivedAfter { time: f64 },
     /// Mean time of the first crossings.
     MeanArrivalTime,
     /// Rms gap between the arrivals along the screen and the theory,
@@ -87,18 +78,10 @@ pub enum Measure {
     ArrivalsAt { x: f64 },
     /// Where the arrivals peak within the given distance of x.
     ArrivalsPeakNear { x: f64, within: f64 },
-    /// Fraction of the arrived particles that started in the front of
-    /// the packet: among the leading share, along y, of all the starts,
-    /// that share being the arrived fraction.
-    ArrivedFromFront,
     /// Mean and standard deviation of the particles' coordinate along
     /// the axis at the end.
     Mean { axis: usize },
     Spread { axis: usize },
-    /// Field: standard deviation of the density along the axis, and
-    /// the probability left, at the end.
-    FieldSpread { axis: usize },
-    Norm,
 }
 
 #[derive(Clone)]
@@ -117,15 +100,13 @@ pub struct Experiment {
     /// against.
     pub reference: &'static str,
     pub stage: Stage,
-    /// The particles in one run; one so far, since the field is a
-    /// plane.
-    pub particles: Vec<Particle>,
-    /// ψ at the start written directly, for a state that is not the
-    /// particle's Gaussian packet.
-    pub state: Option<fn(&mut Wave)>,
-    /// How many times the run is repeated, each from its own start
-    /// drawn from |ψ|²; they share the field and never interact, so
-    /// one run with many is many runs with one.
+    /// The particle of a run.
+    pub particle: Particle,
+    /// The wave at the start, when it is not the particle's Gaussian
+    /// packet.
+    pub state: Option<State>,
+    /// How many times the run is repeated, each from its own start;
+    /// the runs never interact.
     pub runs: usize,
     pub duration: f64,
     /// y of the line where arrivals are counted.
@@ -157,10 +138,6 @@ pub fn band(axis: usize, from: f64, to: f64) -> Rect {
     rect
 }
 
-fn inside(rect: &Rect, p: Vec2) -> bool {
-    (rect[0][0]..rect[0][1]).contains(&p[0]) && (rect[1][0]..rect[1][1]).contains(&p[1])
-}
-
 /// Fraunhofer intensity per unit x on a screen at distance d from
 /// slits of the given width at the given centres. The cylindrical
 /// wave falls as 1/r and meets the flat screen obliquely, which
@@ -177,70 +154,53 @@ pub fn fraunhofer(x: f64, d: f64, centers: &[f64], width: f64) -> f64 {
     envelope * (re * re + im * im) * cos * cos
 }
 
-impl Experiment {
+impl Stage {
+    /// Side length of the plane, centred on the origin.
     pub fn extent(&self) -> f64 {
-        self.stage.cells as f64 * self.stage.dx
+        self.cells as f64 * self.dx
     }
 
-    /// The one particle the field carries.
-    pub fn particle(&self) -> &Particle {
-        let [p] = &self.particles[..] else { panic!("one particle per run so far") };
-        p
+    /// Centre of cell k, counted along x and then up y.
+    pub fn position(&self, k: usize) -> Vec2 {
+        [k % self.cells, k / self.cells].map(|i| (i as f64 + 0.5) * self.dx - self.extent() / 2.0)
     }
 
+    pub fn walled(&self, p: Vec2) -> bool {
+        self.walls.iter().any(|w| inside(w, p))
+    }
+}
+
+impl Experiment {
     /// SI value of one engine unit of time, energy and speed, from
     /// the particle's mass and the stage's scale.
     pub fn time(&self) -> f64 {
-        let (m, l) = (self.particle().kind.mass, self.stage.scale);
+        let (m, l) = (self.particle.kind.mass, self.stage.scale);
         m * l * l / HBAR
     }
 
     pub fn energy(&self) -> f64 {
-        let (m, l) = (self.particle().kind.mass, self.stage.scale);
+        let (m, l) = (self.particle.kind.mass, self.stage.scale);
         HBAR * HBAR / (m * l * l)
     }
 
     pub fn speed(&self) -> f64 {
-        HBAR / (self.particle().kind.mass * self.stage.scale)
+        HBAR / (self.particle.kind.mass * self.stage.scale)
     }
 
-    /// The largest stable step, which the potential's largest
-    /// magnitude on the grid bounds.
-    pub fn dt(&self) -> f64 {
-        let wave = Wave::new(self.stage.cells, self.stage.dx);
-        let at = |k: usize| (self.stage.potential)(wave.position((k % wave.n, k / wave.n))).abs();
-        stable_dt(self.stage.dx, (0..wave.n * wave.n).map(at).fold(0.0, f64::max))
-    }
-
-    /// The field at the start: sponge at the edges, walls cut out
-    /// after it so they stay whole, the potential, then the
-    /// particle's packet or the given state.
-    pub fn build(&self) -> Wave {
+    /// The potential's largest magnitude on the grid, which bounds
+    /// the step an engine can take.
+    pub fn steepest(&self) -> f64 {
         let stage = &self.stage;
-        let particle = self.particle();
-        let mut wave = Wave::new(stage.cells, stage.dx);
-        wave.spin = particle.spin[2];
-        wave.absorb_edges(self.dt());
-        for j in 0..wave.n {
-            for i in 0..wave.n {
-                let p = wave.position((i, j));
-                let k = wave.index((i, j));
-                if stage.walls.iter().any(|w| inside(w, p)) {
-                    wave.keep[k] = 0.0;
-                }
-                wave.potential[k] = (stage.potential)(p) as f32;
-            }
-        }
-        match self.state {
-            Some(state) => state(&mut wave),
-            None => Packet {
-                center: particle.position,
-                width: particle.width,
-                wavevector: particle.velocity,
-            }
-            .write(&mut wave),
-        }
-        wave
+        let at = |k| (stage.potential)(stage.position(k)).abs();
+        (0..stage.cells * stage.cells).map(at).fold(0.0, f64::max)
+    }
+
+    /// The wave at the start: the given state, or the particle's
+    /// packet.
+    pub fn amplitude(&self, p: Vec2) -> Complex {
+        let Particle { position, velocity, width, .. } = self.particle;
+        let packet = Packet { center: position, width, wavevector: velocity };
+        self.state.map_or_else(|| packet.amplitude(p), |state| state(p))
     }
 
     /// The theory's value at x on the screen, zero without a theory.

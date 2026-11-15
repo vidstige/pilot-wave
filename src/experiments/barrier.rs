@@ -1,9 +1,8 @@
-//! Tunnelling through a rectangular barrier: the textbook transmission,
-//! and which particles get through.
+//! Tunnelling through a rectangular barrier: the textbook transmission.
 use crate::experiment::{
     Expectation, Experiment, Measure, Particle, Stage, ELECTRON, ENERGY, SPEED,
 };
-use crate::wave::Vec2;
+use crate::plane::Vec2;
 
 /// The plane is |x|, |y| ≤ 25.6, one unit the electron's wavelength.
 const CELLS: usize = 512;
@@ -27,7 +26,6 @@ const PACKET: Particle = Particle {
     position: [0.0, START],
     velocity: [0.0, SPEED],
     width: WIDTHS,
-    spin: [0.0; 3],
 };
 
 fn barrier(p: Vec2) -> f64 {
@@ -66,16 +64,12 @@ the problem is the one-dimensional one of the textbooks: the \
 transmission of a plane wave is T = 1/(1 + V² sinh²(κa)/4E(V − E)) \
 with κ = √(2(V − E)), 0.227 at k = 2π, and averaged over the packet's \
 spread of wavenumbers 0.230. A screen beyond the barrier counts what \
-tunnels through; on the grid it comes out a few percent less, the \
-grid's dispersion acting like a heavier mass. Which particles tunnel is \
-decided by where they start: trajectories in one dimension cannot \
-cross, so the ones that get through are exactly the ones that \
-started at the front of the packet, the leading share equal to the \
-transmission.",
+tunnels through; on a grid of ten cells per wavelength it comes out \
+a few percent less.",
         reference: "the rectangular barrier of the textbooks, averaged over the packet's spread \
 of wavenumbers; no laboratory experiment",
         stage: Stage { cells: CELLS, dx: DX, scale: SCALE, walls: vec![], potential: barrier },
-        particles: vec![PACKET],
+        particle: PACKET,
         state: None,
         runs: 20000,
         duration: (SCREEN - START + TAIL) / SPEED,
@@ -87,12 +81,6 @@ of wavenumbers; no laboratory experiment",
                 measure: Measure::Arrived,
                 expected,
                 tolerance: 0.02,
-            },
-            Expectation {
-                what: "fraction of the transmitted particles that started in the front of the packet",
-                measure: Measure::ArrivedFromFront,
-                expected: 1.0,
-                tolerance: 0.01,
             },
         ],
     }

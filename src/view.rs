@@ -3,8 +3,9 @@
 use std::f64::consts::TAU;
 
 use crate::colormap::{sample, VIRIDIS};
+use crate::experiment::Stage;
 use crate::image::{mix, Color, Image};
-use crate::wave::{Vec2, Wave};
+use crate::plane::Vec2;
 
 const WALL: Color = [70, 70, 76];
 const PARTICLE: Color = [255, 255, 255];
@@ -35,21 +36,27 @@ fn brightness(density: f32, peak: f32) -> f64 {
     (1.0 + (density / peak).max(1e-30).log10() / DECADES).clamp(0.0, 1.0) as f64
 }
 
-/// The field at every pixel, densities relative to the given peak.
-pub fn field(wave: &Wave, pixels: usize, style: Style, peak: f32) -> Image {
+/// A field over the stage at every pixel, its two quadratures to a
+/// cell, densities relative to the given peak.
+pub fn field(
+    stage: &Stage,
+    [re, im]: [&[f32]; 2],
+    pixels: usize,
+    style: Style,
+    peak: f32,
+) -> Image {
+    let n = stage.cells;
     let mut image = Image::new(pixels, pixels, [0; 3]);
     for y in 0..pixels {
         for x in 0..pixels {
-            let i = x * wave.n / pixels;
-            let j = (pixels - 1 - y) * wave.n / pixels;
-            let k = wave.index((i, j));
-            let brightness = brightness(wave.density(k), peak);
-            let color = if wave.keep[k] == 0.0 {
+            let k = (pixels - 1 - y) * n / pixels * n + x * n / pixels;
+            let brightness = brightness(re[k] * re[k] + im[k] * im[k], peak);
+            let color = if stage.walled(stage.position(k)) {
                 WALL
             } else {
                 match style {
                     Style::Phase => {
-                        let phase = (wave.im[k].atan2(wave.re[k]) as f64) / TAU + 0.5;
+                        let phase = (im[k].atan2(re[k]) as f64) / TAU + 0.5;
                         mix([0; 3], hue(phase), brightness)
                     }
                     Style::Density => sample(&VIRIDIS, brightness),
@@ -61,20 +68,19 @@ pub fn field(wave: &Wave, pixels: usize, style: Style, peak: f32) -> Image {
     image
 }
 
-/// Pixel of a position in an image of the whole domain.
-pub fn pixel(wave: &Wave, pixels: usize, p: Vec2) -> (i64, i64) {
-    let half = wave.extent() / 2.0;
-    let s = pixels as f64 / wave.extent();
-    (((p[0] + half) * s) as i64, ((half - p[1]) * s) as i64)
+/// Pixel of a position in an image of a plane `extent` across.
+fn pixel(extent: f64, pixels: usize, p: Vec2) -> (i64, i64) {
+    let s = pixels as f64 / extent;
+    (((p[0] + extent / 2.0) * s) as i64, ((extent / 2.0 - p[1]) * s) as i64)
 }
 
-pub fn particles(image: &mut Image, wave: &Wave, trails: &[Vec<Vec2>]) {
+pub fn particles(image: &mut Image, extent: f64, trails: &[Vec<Vec2>]) {
     for trail in trails {
         for p in trail {
-            let (x, y) = pixel(wave, image.width, *p);
+            let (x, y) = pixel(extent, image.width, *p);
             image.set(x, y, TRAIL);
         }
-        let (x, y) = pixel(wave, image.width, *trail.last().unwrap());
+        let (x, y) = pixel(extent, image.width, *trail.last().unwrap());
         image.disc(x as f64, y as f64, 1.5, PARTICLE);
     }
 }

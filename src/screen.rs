@@ -1,14 +1,12 @@
-//! A detection line: where particles cross it, and the probability
-//! current the field carries through it, binned along x. No I/O.
-use crate::wave::{Vec2, Wave};
+//! A detection line: where and when particles first cross it, binned
+//! along x. No I/O.
+use crate::plane::Vec2;
 
 pub struct Screen {
     pub y: f64,
     pub half: f64,
     pub bins: usize,
     pub hits: Vec<f64>,
-    /// Time-integrated probability current through the line.
-    pub flux: Vec<f64>,
     /// Each particle's first crossing as (time, x), in the order they
     /// happened.
     pub arrivals: Vec<(f64, f64)>,
@@ -22,7 +20,6 @@ impl Screen {
             half,
             bins,
             hits: vec![0.0; bins],
-            flux: vec![0.0; bins],
             arrivals: Vec::new(),
             arrived: vec![false; particles],
         }
@@ -48,24 +45,6 @@ impl Screen {
                 if let Some(bin) = self.bin(b[0]) {
                     self.hits[bin] += 1.0;
                 }
-            }
-        }
-    }
-
-    pub fn peak(&self) -> f64 {
-        self.flux.iter().cloned().fold(0.0, f64::max).max(1e-300)
-    }
-
-    /// Add this step's probability current through the line.
-    pub fn integrate(&mut self, wave: &Wave, dt: f64) {
-        let (_, row) = wave.cell([0.0, self.y]);
-        let j = row.round() as usize;
-        for i in 1..wave.n - 1 {
-            let k = wave.index((i, j));
-            let x = wave.position((i, j))[0];
-            if let Some(bin) = self.bin(x) {
-                let v = wave.velocity([x, self.y])[1];
-                self.flux[bin] += wave.density(k) as f64 * v * dt * wave.dx;
             }
         }
     }

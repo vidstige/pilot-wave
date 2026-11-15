@@ -21,7 +21,6 @@ pub const BEAM: Particle = Particle {
     position: [0.0, START],
     velocity: [0.0, SPEED],
     width: [6.0, 2.0],
-    spin: [0.0; 3],
 };
 
 /// The plane |x|, |y| ≤ 51.2, one unit the electron's wavelength of
@@ -50,7 +49,7 @@ building up one particle at a time.",
         reference: "Bach et al. 2013, 600 eV electrons; their slit was 62 nm, over a thousand \
 wavelengths, so their pattern sits at angles a thousand times smaller",
         stage: stage(slits(0.0, THICKNESS, &[0.0], WIDTH)),
-        particles: vec![BEAM],
+        particle: BEAM,
         state: None,
         runs: 40000,
         duration: (SCREEN - START + TAIL) / SPEED,
