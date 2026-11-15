@@ -205,8 +205,7 @@ It fails the barrier (0.008 of the runs have the energy, against
   Bohmian field reproduces them exactly, double slit included.
 - **Zero dependencies.** The solver, PNG writer, plotting, random
   numbers and threading are written here; `std::thread::scope` is
-  enough for the parallelism, and the only tool with a dependency is
-  the figure script, in Python.
+  enough for the parallelism.
 - **`f32` fields, `f64` particles.** The field is memory bound and
   half the bytes are half the time; the guided particles are few and
   their arithmetic near nodes wants the precision.
@@ -237,7 +236,7 @@ Every field of `Experiment`, grouped as the definition is:
 | `name`, `summary`, `reference` | what it is, what should happen and why, and the paper or closed form it is checked against |
 | `stage.cells`, `stage.dx` | the grid: n × n cells of side dx, the plane |x|, |y| ≤ n·dx/2 |
 | `stage.scale` | the SI length of one unit, which with the particle's mass gives the units |
-| `stage.walls` | rectangles of hard wall, built with `slits` and `band` or written out |
+| `stage.walls` | rectangles of hard wall, built with `plane::band` and the slit experiment's `slits` or written out |
 | `stage.potential` | V(x, y), a plain function, fixed for the run; its largest magnitude on the grid bounds dt |
 | `particle` | the particle of a run: kind (name, mass), position, velocity, packet width |
 | `state` | the wave at the start as a function of position, when it is not the particle's Gaussian packet |
