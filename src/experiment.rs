@@ -1,15 +1,15 @@
-//! An experiment as data: the stage, the particles, how many runs,
-//! how long, the detector and what is expected, in the engine's units
-//! with the conversion to SI. No I/O.
+//! An experiment as data: the stage, the particle, how many runs,
+//! how long, the detector and what is expected, in units with the
+//! conversion to SI. It names no engine. No I/O.
 //!
-//! Engine units: ħ = m = 1, so a velocity is a wavenumber. A beam's
+//! Units: ħ = m = 1, so a velocity is a wavenumber. A beam's
 //! wavelength is 1, so its speed is 2π and its kinetic energy 2π².
 //! The particle's mass and the stage's scale, the SI length of one
 //! unit, give the units of time, energy and speed.
 //!
 //! Every particle is an independent run of the one-particle
 //! experiment: they never interact.
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::TAU;
 
 use crate::packet::{Complex, Packet};
 use crate::plane::{inside, Rect, Vec2};
@@ -64,7 +64,6 @@ pub struct Stage {
 
 /// What a run is asked about: only what a detector could record,
 /// the particles' positions, counts and times.
-#[derive(Clone)]
 pub enum Measure {
     /// Fraction of the particles that crossed the screen.
     Arrived,
@@ -89,7 +88,6 @@ pub enum Measure {
     Misplaced { side: f64 },
 }
 
-#[derive(Clone)]
 pub struct Expectation {
     pub what: &'static str,
     pub measure: Measure,
@@ -97,7 +95,6 @@ pub struct Expectation {
     pub tolerance: f64,
 }
 
-#[derive(Clone)]
 pub struct Experiment {
     pub name: &'static str,
     pub summary: &'static str,
@@ -126,40 +123,6 @@ pub struct Experiment {
 
 pub fn free(_: Vec2) -> f64 {
     0.0
-}
-
-/// A wall across the plane at height y with openings of the given
-/// width at the given x, as the rectangles between the openings.
-pub fn slits(y: f64, thickness: f64, centers: &[f64], width: f64) -> Vec<Rect> {
-    let edges: Vec<f64> = centers.iter().flat_map(|c| [c - width / 2.0, c + width / 2.0]).collect();
-    let ends = [f64::NEG_INFINITY].into_iter().chain(edges).chain([f64::INFINITY]);
-    let pieces: Vec<f64> = ends.collect();
-    let piece = |x: &[f64]| [[x[0], x[1]], [y - thickness / 2.0, y + thickness / 2.0]];
-    pieces.chunks(2).map(piece).collect()
-}
-
-/// A wall filling everything with the coordinate along the axis
-/// between `from` and `to`.
-pub fn band(axis: usize, from: f64, to: f64) -> Rect {
-    let mut rect = [[f64::NEG_INFINITY, f64::INFINITY]; 2];
-    rect[axis] = [from, to];
-    rect
-}
-
-/// Fraunhofer intensity per unit x on a screen at distance d from
-/// slits of the given width at the given centres. The cylindrical
-/// wave falls as 1/r and meets the flat screen obliquely, which
-/// together give a factor cos²θ.
-pub fn fraunhofer(x: f64, d: f64, centers: &[f64], width: f64) -> f64 {
-    let r = x.hypot(d);
-    let (sin, cos) = (x / r, d / r);
-    let beta = PI * width * sin;
-    let envelope = if beta.abs() < 1e-9 { 1.0 } else { (beta.sin() / beta).powi(2) };
-    let (re, im) = centers.iter().fold((0.0, 0.0), |(re, im), c| {
-        let phase = TAU * c * sin;
-        (re + phase.cos(), im + phase.sin())
-    });
-    envelope * (re * re + im * im) * cos * cos
 }
 
 impl Stage {
@@ -222,31 +185,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn single_slit_fraunhofer_has_its_first_zero_at_the_slit_angle() {
-        let zero = (0.5f64).asin().tan() * 10.0;
-        assert!(fraunhofer(zero, 10.0, &[0.0], 2.0) < 1e-12);
-        assert!(fraunhofer(0.0, 10.0, &[0.0], 2.0) > 0.99);
-    }
-
-    #[test]
     fn an_electron_at_fifty_picometres_has_six_hundred_electron_volts() {
         let e = crate::experiments::single_slit::single_slit();
         let ev = ENERGY * e.energy() / ELECTRON_VOLT;
         assert!((ev - 602.0).abs() < 2.0, "{ev}");
-    }
-
-    #[test]
-    fn slits_leave_only_their_openings_in_the_wall() {
-        let walls = slits(0.0, 0.4, &[-2.0, 2.0], 1.0);
-        assert_eq!(walls.len(), 3);
-        let open = |x: f64| !walls.iter().any(|w| inside(w, [x, 0.1]));
-        assert!(open(-2.0) && open(2.4) && !open(0.0) && !open(-9.0) && !open(9.0));
-        assert!(!walls.iter().any(|w| inside(w, [0.0, 0.3])));
-    }
-
-    #[test]
-    fn a_band_spans_the_other_axis() {
-        let wall = band(0, 5.0, f64::INFINITY);
-        assert!(inside(&wall, [6.0, -1e9]) && !inside(&wall, [4.9, 0.0]));
     }
 }

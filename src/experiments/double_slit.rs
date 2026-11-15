@@ -1,6 +1,6 @@
 //! Electrons through two slits: cos² fringes under the sinc² envelope.
-use crate::experiment::{fraunhofer, slits, Expectation, Experiment, Measure, SPEED};
-use crate::experiments::single_slit::{stage, BEAM};
+use crate::experiment::{Expectation, Experiment, Measure, SPEED};
+use crate::experiments::single_slit::{fraunhofer, slits, stage, BEAM};
 
 const WIDTH: f64 = 1.0;
 const SEPARATION: f64 = 4.0;
@@ -24,15 +24,10 @@ pub fn double_slit() -> Experiment {
     Experiment {
         name: "double-slit",
         summary: "\
-The same beam as the single slit meets a wall with two slits 1 wide and \
-4 apart, centre to centre. The arrivals should show cos²(πd sinθ) \
-fringes under the sinc²(πa sinθ) envelope, orders at sinθ = m/4, so \
-maxima at x = 0, ±7.7, ±17 and minima between them. In the trails each \
-particle goes through one slit or the other and never crosses the \
-axis of symmetry, which no detector could see without destroying the \
-fringes, so it is not expected, only shown. The arrivals are recorded \
-in order, so the fringes can be watched building up one particle at \
-a time.",
+The single slit's beam meets a wall with two slits 1 wide and 4 \
+apart. The arrivals along the screen should show the fringes \
+cos²(πd sinθ) under the envelope sinc²(πa sinθ): maxima at x = 0, \
+±7.7 and ±17, and next to nothing between them.",
         reference: "Bach et al. 2013, 600 eV electrons through slits 62 nm wide and 272 nm apart: \
 d/a = 4.4 against our 4, so about as many fringes fit under the envelope, but theirs are \
 0.18 mrad apart against our 0.25 rad",

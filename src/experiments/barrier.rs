@@ -58,14 +58,11 @@ pub fn tunnelling() -> Experiment {
     Experiment {
         name: "barrier",
         summary: "\
-A packet 6 wide across and 2 long heads up at speed 2π at a barrier \
-0.4 wide and 1.2 times its energy high, across the whole plane, so \
-the problem is the one-dimensional one of the textbooks: the \
-transmission of a plane wave is T = 1/(1 + V² sinh²(κa)/4E(V − E)) \
-with κ = √(2(V − E)), 0.227 at k = 2π, and averaged over the packet's \
-spread of wavenumbers 0.230. A screen beyond the barrier counts what \
-tunnels through; on a grid of ten cells per wavelength it comes out \
-a few percent less.",
+A beam 6 wide and 2 long flies up at speed 2π at a barrier 0.4 thick \
+and 1.2 times its energy high. A share of 0.230 should get through \
+to the screen beyond: the textbook transmission \
+T = 1/(1 + V² sinh²(κa)/4E(V − E)), κ = √(2(V − E)), averaged over \
+the beam's spread of speeds.",
         reference: "the rectangular barrier of the textbooks, averaged over the packet's spread \
 of wavenumbers; no laboratory experiment",
         stage: Stage { cells: CELLS, dx: DX, scale: SCALE, walls: vec![], potential: barrier },
@@ -78,7 +75,7 @@ of wavenumbers; no laboratory experiment",
         theory: None,
         expectations: vec![
             Expectation {
-                what: "fraction of the particles through the barrier, the averaged textbook transmission",
+                what: "share of the particles through the barrier, the averaged textbook T",
                 measure: Measure::Arrived,
                 expected,
                 tolerance: 0.02,

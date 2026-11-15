@@ -76,7 +76,7 @@ impl Engine for Classical {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::experiment::band;
+    use crate::plane::band;
 
     /// A barrier 10 high from y = 0 to 0.4, and a wall from y = 3.
     fn barrier(p: Vec2) -> f64 {

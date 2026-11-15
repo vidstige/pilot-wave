@@ -3,9 +3,9 @@
 //! at the source are.
 use std::f64::consts::{PI, TAU};
 
-use crate::experiment::{band, free, Expectation, Experiment, Measure, Particle, Stage, ELECTRON};
+use crate::experiment::{free, Expectation, Experiment, Measure, Particle, Stage, ELECTRON};
 use crate::packet::Complex;
-use crate::plane::{Rect, Vec2};
+use crate::plane::{band, Rect, Vec2};
 use crate::rng::Rng;
 
 /// The plane is |x|, |y| ≤ 6.4, one unit a nanometre; the box sits in
@@ -59,16 +59,11 @@ pub fn relaxation() -> Experiment {
     Experiment {
         name: "relaxation",
         summary: "\
-A box 4 wide holds a wave made of its first sixteen modes in equal \
-measure, each with its own phase, so the density sloshes about and \
-the nodes of the wave wander through the box. Every other run is \
-not placed where the source says but in a square of side 1 in one \
-corner. Each is carried round the wandering nodes, neighbours are \
-pulled apart, and the ensemble is stirred through the box until, \
-counted in squares of side 0.5, the runs from the corner are spread \
-as the runs from the source are. So where particles are found need \
-not be put in at the start; in a wave busy enough it comes about, \
-and stays.",
+A box 4 wide holds a wave of its first sixteen modes, each with its \
+own phase, sloshing about. Every other run starts not at the source \
+but in a square of side 1 in one corner. At the end, counted in \
+squares of side 0.5, the runs from the corner should be spread as \
+the runs from the source are: where a run started is forgotten.",
         reference: "Valentini and Westman 2005, Proc. R. Soc. A 461, 253: sixteen modes of a \
 box, an ensemble started out of step with |ψ|² relaxing to it; no laboratory experiment",
         stage: Stage { cells: CELLS, dx: DX, scale: SCALE, walls: walls(), potential: free },
